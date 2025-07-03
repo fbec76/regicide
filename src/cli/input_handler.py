@@ -1,3 +1,6 @@
+from .display import show_player_hand
+
+
 def prompt_action_choice(player):
     """
     Prompt player to choose action for their turn.
@@ -60,6 +63,7 @@ def prompt_card_indexes_to_discard(player, required_value):
         print(f"Selected cards total value: {total}")
         return total >= required_value
 
+    show_player_hand(player)
     print(f"You must discard cards to cover at least {required_value} points of damage.")
     print("Enter card indexes separated by spaces (no repeats allowed):")
     return _prompt_card_indexes(

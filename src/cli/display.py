@@ -1,4 +1,5 @@
 import sys
+import re
 
 SUIT_SYMBOLS = {
     "hearts": "♥",
@@ -18,7 +19,21 @@ SUIT_COLORS = {
 RESET_COLOR = "\033[0m"
 
 
-def card_ascii(card, width=8, highlight=False):
+def visible_len(s):
+    """Count the length of the string as seen in the terminal (ignore ANSI codes)."""
+    return len(re.sub(r'\033\[[0-9;]*m', '', s))
+
+
+def manual_center(text, width):
+    """Center text within width using spaces, based on visible characters (ignoring ANSI)."""
+    text_len = visible_len(text)
+    total_space = max(0, width - text_len)
+    left = total_space // 2
+    right = total_space - left
+    return ' ' * left + text + ' ' * right
+
+
+def card_ascii(card, width=9, highlight=False):
     """
     Returns a list of strings for the card's ASCII art, with highlighting if specified.
     Handles all card types & centers attack|health for enemies for any reasonable width>=7.
@@ -35,10 +50,10 @@ def card_ascii(card, width=8, highlight=False):
     # Special handling/centering for center display
     if card.c_type == "animal":
         label = "A"
-        center = f"{hl}A{endhl}".center(width - 2)
+        center = manual_center(f"{hl}A{endhl}", width - 2)
     elif card.c_type == "jester":
         label = "★"
-        center = f"{color}★{RESET_COLOR}".center(width - 2)
+        center = manual_center(f"{color}★{RESET_COLOR}", width - 2)
     elif card.c_type == "enemy":
         label = r
         attack = card.attack
@@ -46,26 +61,26 @@ def card_ascii(card, width=8, highlight=False):
         # Center the "hp|attack" string for arbitrary width
         ha = f"{health}|{attack}"
         center = f"{hl}{ha}{endhl}"
-        center = center.center(width - len(str(center)))
+        center = manual_center(center, width - 2)
     else:
         label = r
-        center = f"{hl}{str(v)}{endhl}".center(width - 2)
+        center = manual_center(f"{hl}{str(v)}{endhl}", width - 2)
 
     # Compose the lines:
     # Top label left, suit right
-    pad_r = width - 3 - len(label)         # for left-aligned rank
-    pad_l = width - 3 - len(label)         # for right-aligned rank
-    # Guarantee >=1 space if width is narrow (should use at least width=7+!)
+    pad_r = width - 3 - len(label)  # for left-aligned rank
+    pad_l = width - 3 - len(label)  # for right-aligned rank
+    # Guarantee >=1 space if width is narrow
     pad_r = max(pad_r, 1)
     pad_l = max(pad_l, 1)
 
-    top     = hl + f"┌{'─' * (width - 2)}┐" + endhl
-    line_1  = hl + f"│{label}{' ' * pad_r}{sym}│" + endhl
-    line_2  = hl + f"│{' ' * (width - 2)}│" + endhl
-    line_3  = hl + f"│{center}│" + endhl
-    line_4  = hl + f"│{' ' * (width - 2)}│" + endhl
-    line_5  = hl + f"│{sym}{' ' * pad_l}{label}│" + endhl
-    bot     = hl + f"└{'─' * (width - 2)}┘" + endhl
+    top = hl + f"┌{'─' * (width - 2)}┐" + endhl
+    line_1 = hl + f"│{label}{' ' * pad_r}{sym}│" + endhl
+    line_2 = hl + f"│{' ' * (width - 2)}│" + endhl
+    line_3 = hl + f"│{center}│" + endhl
+    line_4 = hl + f"│{' ' * (width - 2)}│" + endhl
+    line_5 = hl + f"│{sym}{' ' * pad_l}{label}│" + endhl
+    bot = hl + f"└{'─' * (width - 2)}┘" + endhl
     return [top, line_1, line_2, line_3, line_4, line_5, bot]
 
 
@@ -90,9 +105,10 @@ def show_enemy(enemy):
     print_separator("=")
     print("                ENEMY ENCOUNTERED")
     print_separator("=")
-    card_lines = card_ascii(enemy, width=15, highlight=True)
+    card_lines = card_ascii(enemy, width=12, highlight=True)
     for line in card_lines:
-        print(line.center(60))
+        print(manual_center(line, 60))
+        # print(line.center(60))
     print(
         f"Health: {enemy.max_health - enemy.current_damage}/{enemy.max_health}\t\tAttack: {enemy.effective_attack()} (base {enemy.attack}, shield {enemy.shield})")
     print(
@@ -113,7 +129,7 @@ def show_player_hand(player):
     print_separator("-")
     print(f"{player.name}'s hand:")
     print_cards(player.hand)
-    print("".join([f"[{i}]       " for i in range(len(player.hand))]))
+    print("  ".join([f"   [{i}]   " for i in range(len(player.hand))]))
     print_separator("-")
 
 
