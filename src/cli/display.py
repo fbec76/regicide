@@ -105,10 +105,9 @@ def show_enemy(enemy):
     print_separator("=")
     print("                ENEMY ENCOUNTERED")
     print_separator("=")
-    card_lines = card_ascii(enemy, width=12, highlight=True)
+    card_lines = card_ascii(enemy, width=9, highlight=True)
     for line in card_lines:
         print(manual_center(line, 60))
-        # print(line.center(60))
     print(
         f"Health: {enemy.max_health - enemy.current_damage}/{enemy.max_health}\t\tAttack: {enemy.effective_attack()} (base {enemy.attack}, shield {enemy.shield})")
     print(
