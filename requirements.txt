@@ -1,0 +1,6 @@
+schedule~=1.2.2
+requests~=2.32.3
+waitress~=3.0.2
+flask~=3.1.0
+dotenv~=0.9.9
+python-dotenv~=1.1.0

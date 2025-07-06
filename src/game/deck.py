@@ -1,9 +1,10 @@
 import random
+from typing import List
 
 from .card import Card
 
 class Deck:
-    def __init__(self, cards=None):
+    def __init__(self, cards: List[Card]=None):
         self.cards = list(cards) if cards else []
 
     def shuffle(self):

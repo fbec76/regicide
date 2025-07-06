@@ -30,7 +30,6 @@ def valid_animal_pair(cards):
             return True
     return False
 
-
 def is_valid_play(cards):
     """
     Returns True if cards is a legal play for a turn.
@@ -56,30 +55,16 @@ def is_enemy_immune(enemy, card, jester_active=False):
         return False
     return enemy.suit == card.suit
 
-
-def resolve_suit_power(card, enemy, discard_pile, tavern_deck, players, game_state, acting_player):
-    """
-    Applies the effect of the card's suit power PER THE RULES.
-    This should be called after a legal play, and after checking immunity.
-
-    enemy: Enemy object (current)
-    discard_pile: DiscardPile/Deck
-    tavern_deck: TavernDeck/Deck
-    players: list of Player objects in turn order (starting from acting player)
-    game_state: the current GameState (for extra state, e.g., shields)
-    acting_player: Player object
-    """
-    if card.suit == 'hearts':
-        # Hearts: Heal 'value' cards from discard back under tavern deck
-        n = card.value
+def resolve_suit_power(suit, value, enemy, discard_pile, tavern_deck, players, game_state, acting_player):
+    if suit == 'hearts':
+        n = value
         if len(discard_pile) > 0:
             restored = discard_pile.shuffle_and_return_n_cards(n)
             for card_ in restored:
                 tavern_deck.add_to_bottom(card_)
             print(f"Healed {len(restored)} cards from discard into tavern deck.")
-    elif card.suit == 'diamonds':
-        # Diamonds: Draw 'value' cards, one per player in order, skipping full hands
-        to_draw = card.value
+    elif suit == 'diamonds':
+        to_draw = value
         drawn = 0
         start = players.index(acting_player)
         idx = 0
@@ -95,13 +80,11 @@ def resolve_suit_power(card, enemy, discard_pile, tavern_deck, players, game_sta
             if idx > (n_players * 2):
                 break
         print(f"Diamond effect: {drawn} cards drawn among players.")
-    elif card.suit == 'clubs':
-        # Clubs: Damage is doubled in main attack calculation (handled in main engine, not here).
+    elif suit == 'clubs':
         pass
-    elif card.suit == 'spades':
-        # Spades: Reduces current enemy's attack value by this card's value
-        enemy.apply_shield(card.value)
-        print(f"Spade effect: Enemy shielded by {card.value} (now {enemy.shield})")
+    elif suit == 'spades':
+        enemy.apply_shield(value)
+        print(f"Spade effect: Enemy shielded by {value} (now {enemy.shield})")
 
 
 def total_attack(cards, jester_active=False, enemy=None):
@@ -121,7 +104,7 @@ def total_attack(cards, jester_active=False, enemy=None):
             damage += c.value
     # Clubs doubling: Disabled against club enemy unless jester active
     if enemy and enemy.suit == 'clubs' and not jester_active:
-        damage += club_count  # Just normal
+        damage += club_count
     else:
         damage += 2 * club_count
     return damage
