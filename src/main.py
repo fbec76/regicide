@@ -10,7 +10,7 @@ from cli.display import (
     show_yield_forbidden, show_discard_phase, show_played_cards, show_jester_played
 )
 from cli.input_handler import (
-    prompt_action_choice, prompt_card_indexes_to_play, prompt_card_indexes_to_discard, prompt_next_player, prompt_continue
+    prompt_action_choice, prompt_card_indexes_to_play, prompt_card_indexes_to_discard, prompt_next_player
 )
 
 
