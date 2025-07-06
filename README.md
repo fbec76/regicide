@@ -13,6 +13,12 @@ Regicide is a cooperative card game where players work together to defeat the ro
 git clone https://github.com/yourusername/regicide.git
 cd regicide
 
+python -m venv .venv
+# unix  
+source .venv/bin/activate 
+# OR windows
+.venv/Scripts/activate
+
 # Install dependencies
 pip install -r requirements.txt
 ```
@@ -22,30 +28,3 @@ pip install -r requirements.txt
 ```bash
 python src/main.py
 ```
-
-## Testing
-
-A comprehensive test suite is available in the `tests` directory. The tests cover all core components of the game:
-
-- Card functionality
-- Deck operations
-- Player actions
-- Enemy interactions
-- Game state management
-- Game rules
-
-### Running Tests
-
-You can run all tests using:
-
-```bash
-python tests/run_tests.py
-```
-
-Or using the unittest module:
-
-```bash
-python -m unittest discover tests
-```
-
-For more detailed information about the tests, see the [tests README](tests/README.md).
