@@ -13,7 +13,7 @@ Regicide is a cooperative card game where players work together to defeat the ro
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/regicide.git
+git clone https://github.com/fbec76/regicide.git
 cd regicide
 
 python -m venv .venv
