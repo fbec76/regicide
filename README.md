@@ -2,6 +2,9 @@
 
 The card game Regicide playable via a CLI interface.
 
+The games rules can be found here: https://www.regicidegame.com/site_files/33132/upload_files/RegicideRulesA4.pdf
+
+
 ## Overview
 
 Regicide is a cooperative card game where players work together to defeat the royal enemies (Jacks, Queens, and Kings) using number cards, animals (Aces), and jesters.
