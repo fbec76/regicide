@@ -1,3 +1,8 @@
+from dotenv import load_dotenv
+load_dotenv()
+
+from __init__ import get_logger
+logger = get_logger("regicide.main")
 from game.rules import total_attack, is_enemy_immune, is_valid_play, exact_defeat, resolve_suit_power, can_play_jester
 from game.player import Player
 from game.deck import TavernDeck, CastleDeck, DiscardPile
@@ -76,9 +81,22 @@ def handle_enemy_attack(game_state, player):
     return True
 
 
+def log_data_state(game_state):
+    # Log all players' hands
+    for p in game_state.players:
+        logger.data(f"HAND {p.name}: {[str(c) for c in p.hand]}")
+    # Log all cards in decks (in order)
+    logger.data(f"TAVERN DECK: {[str(c) for c in game_state.tavern_deck.cards]}")
+    logger.data(f"CASTLE DECK: {[str(c) for c in game_state.castle_deck.cards]}")
+    logger.data(f"DISCARD PILE: {[str(c) for c in game_state.discard_pile.cards]}")
+    # Log upcoming enemies (all in castle deck)
+    logger.data(f"UPCOMING ENEMIES: {[str(c) for c in game_state.castle_deck.cards]}")
+
+
 #### MAIN GAME LOOP
 
 def main():
+    logger.info("Game started.")
     print("Welcome to Regicide (Terminal Edition)!")
     print("How many players? (2-4)")
     while True:
@@ -86,27 +104,36 @@ def main():
             num_players = int(input("> ").strip())
             if num_players not in (2, 3, 4):
                 print("2, 3, or 4 players only.")
+                logger.warning(f"Invalid player count input: {num_players}")
                 continue
             break
-        except ValueError:
+        except ValueError as e:
             print("Please enter a number (2-4).")
+            logger.warning(f"Non-integer player count input: {e}")
 
     hand_size_table = {1: 8, 2: 7, 3: 6, 4: 5}
     max_hand_size = hand_size_table[num_players]
 
     players = ask_player_names(num_players, max_hand_size)
+    logger.info(f"Players: {[p.name for p in players]}")
 
     jacks, queens, kings = create_enemy_faces()
+    logger.info("Castle deck created and shuffled.")
     castle_deck = CastleDeck(jacks, queens, kings)
     tavern_deck = TavernDeck(num_players)
+    logger.info("Tavern deck created and shuffled.")
     discard_pile = DiscardPile()
 
     game_state = GameState(players=players, tavern_deck=tavern_deck, castle_deck=castle_deck, discard_pile=discard_pile)
+    logger.info("Game state initialized.")
 
     deal_initial_hands(game_state)
+    logger.info("Initial hands dealt.")
 
     while not game_state.is_game_won():
         active_player = game_state.get_active_player()
+        logger.info(f"Turn: {active_player.name}")
+        log_data_state(game_state)
         show_current_state(game_state)
         show_player_hand(active_player)
 
@@ -121,12 +148,16 @@ def main():
             while True:
                 cards_played = prompt_card_indexes_to_play(active_player)
                 if is_valid_play(cards_played):
+                    logger.info(f"{active_player.name} plays: {[str(c) for c in cards_played]}")
+                    logger.data(f"CARD_PLAYED by {active_player.name}: {[str(c) for c in cards_played]}")
                     break
                 else:
                     show_invalid_action("That is not a valid play. Try again.")
+                    logger.warning(f"Invalid play by {active_player.name}: {[str(c) for c in cards_played]}")
 
             if can_play_jester(cards_played):
                 show_jester_played()
+                logger.info(f"Jester played by {active_player.name}")
                 game_state.face_jester_played = True
                 game_state.update_enemy_immunity()
                 if game_state.current_enemy.suit == 'spades' and played_spades:
@@ -134,6 +165,7 @@ def main():
                         resolve_suit_power('spades', spade_card.value, game_state.current_enemy, discard_pile=None, tavern_deck=None, players=None, game_state=game_state, acting_player=active_player)
                     played_spades.clear()
                 next_player = prompt_next_player(list(game_state.players))
+                logger.info(f"Next player after Jester: {next_player.name}")
                 while game_state.get_active_player() != next_player:
                     game_state.advance_turn()
                 continue
@@ -144,10 +176,10 @@ def main():
                         f"You are playing a card of the enemy's suit ({c.suit}) while immunity is ON. Sure? (y/N): ").strip().lower()
                     if confirm != 'y':
                         show_invalid_action("Play cancelled by player due to immunity confirmation.")
+                        logger.info(f"{active_player.name} cancelled play due to immunity warning.")
                         [active_player.add_card(card) for card in cards_played]
                         cards_played.clear()
                         break
-                # Track spades played under immunity for possible retroactive effect
                 if c.suit == 'spades' and game_state.current_enemy.suit == 'spades' and game_state.enemy_immunity:
                     played_spades.append(c)
             if not cards_played:
@@ -160,9 +192,9 @@ def main():
             total_value = sum(c.value for c in cards_played)
             for suit in ('hearts', 'diamonds', 'clubs', 'spades'):
                 if any(c.suit == suit for c in cards_played):
-                    # Check immunity
                     any_card_of_suit = next(c for c in cards_played if c.suit == suit)
                     if not is_enemy_immune(game_state.current_enemy, any_card_of_suit, game_state.face_jester_played):
+                        logger.info(f"Resolving suit power: {suit} for {active_player.name} (value {total_value})")
                         resolve_suit_power(
                             suit, total_value, game_state.current_enemy, game_state.discard_pile,
                             game_state.tavern_deck, list(game_state.players), game_state, active_player
@@ -170,54 +202,64 @@ def main():
 
             damage = total_attack(cards_played, game_state.face_jester_played, enemy=game_state.current_enemy)
             game_state.current_enemy.apply_damage(damage)
+            logger.info(f"{active_player.name} dealt {damage} damage to enemy {game_state.current_enemy.display_name} (total damage: {game_state.current_enemy.current_damage})")
             print(
                 f"\033[93mTotal damage dealt to enemy: {damage}. (Damage so far: {game_state.current_enemy.current_damage})\033[0m")
 
-            # Step 4: Check defeat or suffer damage
             if game_state.current_enemy.is_defeated():
                 if exact_defeat(game_state.current_enemy.current_damage, game_state.current_enemy):
                     print("You have defeated the enemy EXACTLY! Place enemy on top of Tavern deck.")
+                    logger.info(f"Enemy {game_state.current_enemy.display_name} defeated EXACTLY.")
                     game_state.tavern_deck.add_to_top(game_state.current_enemy)
                 else:
                     print("Enemy defeated! Card goes to discard pile.")
+                    logger.info(f"Enemy {game_state.current_enemy.display_name} defeated.")
                     game_state.discard_pile.add_to_top(game_state.current_enemy)
-                # Discard all played cards
                 for c in game_state.played_this_enemy:
                     game_state.discard_pile.add_to_top(c)
                 game_state.played_this_enemy.clear()
-                # Next enemy
                 next_enemy = game_state.castle_deck.draw_one()
+                logger.info(f"Next enemy: {next_enemy.display_name if next_enemy else 'None (game won)'}")
                 game_state.current_enemy = next_enemy
                 game_state.face_jester_played = False
-                # Skip enemy retaliation this turn, next player starts
                 if next_enemy is not None:
                     print("\nA new enemy appears!\n")
-                continue  # Next player's turn
+                continue
             else:
-                # Enemy attacks!
                 if not handle_enemy_attack(game_state, active_player):
+                    logger.warning(f"{active_player.name} was defeated by enemy attack.")
                     return
 
-            # Advance turn
             game_state.advance_turn()
+            log_data_state(game_state)
 
         elif action == 'yield':
+            logger.info(f"{active_player.name} yields.")
+            logger.data(f"YIELD by {active_player.name}")
             if not handle_enemy_attack(game_state, active_player):
+                logger.warning(f"{active_player.name} was defeated by enemy attack after yielding.")
                 return
-            # Advance turn
             game_state.advance_turn()
+            log_data_state(game_state)
 
         else:
             show_invalid_action("Unknown action. Skipping turn for safety.")
+            logger.warning(f"Unknown action for {active_player.name}: {action}")
             game_state.advance_turn()
 
-        # End-of-turn/game checks
         if game_state.check_loss():
             show_loss("A player could not satisfy enemy attack or no legal plays remain.")
+            logger.error("Game lost: a player could not satisfy enemy attack or no legal plays remain.")
             return
 
     show_win()
-
+    logger.info("Game won!")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        logger = get_logger("regicide.main")
+        logger.error(f"Unhandled exception: {e}\n{traceback.format_exc()}")
+        print("\033[91mA fatal error occurred. See regicide.log for details.\033[0m")
