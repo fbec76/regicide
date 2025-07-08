@@ -116,6 +116,7 @@ def main():
             show_yield_forbidden()
             action = 'play'
 
+        played_spades = []
         if action == 'play':
             while True:
                 cards_played = prompt_card_indexes_to_play(active_player)
@@ -128,6 +129,10 @@ def main():
                 show_jester_played()
                 game_state.face_jester_played = True
                 game_state.update_enemy_immunity()
+                if game_state.current_enemy.suit == 'spades' and played_spades:
+                    for spade_card in played_spades:
+                        resolve_suit_power('spades', spade_card.value, game_state.current_enemy, discard_pile=None, tavern_deck=None, players=None, game_state=game_state, acting_player=active_player)
+                    played_spades.clear()
                 next_player = prompt_next_player(list(game_state.players))
                 while game_state.get_active_player() != next_player:
                     game_state.advance_turn()
@@ -142,6 +147,9 @@ def main():
                         [active_player.add_card(card) for card in cards_played]
                         cards_played.clear()
                         break
+                # Track spades played under immunity for possible retroactive effect
+                if c.suit == 'spades' and game_state.current_enemy.suit == 'spades' and game_state.enemy_immunity:
+                    played_spades.append(c)
             if not cards_played:
                 continue
 

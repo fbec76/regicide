@@ -1,3 +1,8 @@
+from typing import List
+
+from .card import Card
+
+
 def valid_combo(cards):
     """
     Returns True if cards is a valid combo play; cards: list of Card.
@@ -87,27 +92,25 @@ def resolve_suit_power(suit, value, enemy, discard_pile, tavern_deck, players, g
         print(f"Spade effect: Enemy shielded by {value} (now {enemy.shield})")
 
 
-def total_attack(cards, jester_active=False, enemy=None):
+def total_attack(cards: List[Card], jester_active=False, enemy=None):
     """
     Computes attack value to enemy for cards played (handling combos, animal pair, clubs).
     If playing against clubs enemy with immunity (jester_active==False), no club doubling.
     Returns int: total damage.
     """
     damage = 0
-    club_count = 0
+    has_club = False
     for c in cards:
         if c.c_type == 'jester':
             continue
-        elif c.suit == 'clubs':
-            club_count += c.value
-        else:
-            damage += c.value
-    # Clubs doubling: Disabled against club enemy unless jester active
-    if enemy and enemy.suit == 'clubs' and not jester_active:
-        damage += club_count
+        damage += c.value
+        if c.suit == 'clubs':
+            has_club = True
+    # Clubs doubling: Only if a club is played, and not against club enemy unless jester active
+    if has_club and (not (enemy and enemy.suit == 'clubs' and not jester_active)):
+        return 2 * damage
     else:
-        damage += 2 * club_count
-    return damage
+        return damage
 
 
 def yield_allowed(game_state, player):
