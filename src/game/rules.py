@@ -81,8 +81,7 @@ def resolve_suit_power(suit, value, enemy, discard_pile, tavern_deck, players, g
                 player.add_card(c)
                 drawn += 1
             idx += 1
-            # If all are full or tavern empty, stop
-            if idx > (n_players * 2):
+            if all(p.hand_size() == p.hand_limit for p in players) or tavern_deck.is_empty():
                 break
         print(f"♦ {drawn} cards drawn among players.")
     elif suit == 'clubs':

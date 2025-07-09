@@ -170,7 +170,6 @@ def main():
                     if confirm != 'y':
                         show_invalid_action("Play cancelled by player due to immunity confirmation.")
                         logger.info(f"{active_player.name} cancelled play due to immunity warning.")
-                        [active_player.add_card(card) for card in cards_played]
                         cards_played.clear()
                         break
                 if c.suit == 'spades' and game_state.current_enemy.suit == 'spades' and game_state.enemy_immunity:
