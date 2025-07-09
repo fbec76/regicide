@@ -69,6 +69,16 @@ pytest tests
 
 This will automatically discover and run all test files in the `tests/` directory.
 
+## Development
+
+### Logging
+
+The application supports different logging levels, including a DATA level for detailed game state information. 
+To enable this, create and `.env` file and set the logging level like so:
+
+```bash
+REGICIDE_LOG_LEVEL=DATA
+```
 ## Resources
 
 - [Official Regicide Rules PDF](https://www.regicidegame.com/site_files/33132/upload_files/RegicideRulesA4.pdf)
