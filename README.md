@@ -64,12 +64,6 @@ python src/main.py
 This project uses [pytest](https://docs.pytest.org/) for testing. To run all tests, make sure you have pytest installed:
 
 ```bash
-pip install pytest
-```
-
-Then run the tests from the project root:
-
-```bash
 pytest tests
 ```
 
