@@ -16,7 +16,7 @@ class GameState:
         self.castle_deck = castle_deck
         self.discard_pile = discard_pile
 
-        self.first_turn = True
+        self.total_turns = 0
         self.current_enemy = self.castle_deck.draw_one()  # Card object
         self.enemy_damage = 0
         self.spade_shield = 0
@@ -34,7 +34,7 @@ class GameState:
 
     def advance_turn(self):
         self.players.rotate(-1)  # Move to the next player
-        self.first_turn = False
+        self.total_turns += 1
 
 
     def update_enemy_immunity(self):
@@ -46,7 +46,7 @@ class GameState:
 
     def can_yield(self, player: Player):
         # At least one other player must not have yielded on their last turn
-        return True if self.first_turn else not all([v for k, v in self.yields_in_a_row.items() if k != player.name])
+        return True if self.total_turns == 0 else not all([v for k, v in self.yields_in_a_row.items() if k != player.name])
 
     def check_loss(self):
         # Loss conditions: player unable to discard for damage; no legal play/yield

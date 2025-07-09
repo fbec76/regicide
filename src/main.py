@@ -74,6 +74,9 @@ def handle_enemy_attack(game_state, player):
         if player.hand_size() == 0:
             show_loss(f"{player.name} has no cards left to discard and is killed by the enemy!")
             return False
+        if sum(c.value for c in player.hand) < enemy_attack:
+            show_loss(f"{player.name} cannot discard enough cards to cover the enemy's attack of {enemy_attack}!")
+            return False
         discards = prompt_card_indexes_to_discard(player, enemy_attack)
         player.play_cards(discards)
         for d in discards:
@@ -127,6 +130,11 @@ def main():
         log_data_state(game_state)
         show_current_state(game_state)
         show_player_hand(active_player)
+
+        if active_player.hand_size() == 0:
+            show_loss(f"{active_player.name} has no cards left to play and is defeated!")
+            logger.info(f"{active_player.name} has no cards left to play and is defeated!")
+            return
 
         if game_state.can_yield(active_player):
             action = prompt_action_choice(active_player)

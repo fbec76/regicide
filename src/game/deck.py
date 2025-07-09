@@ -75,8 +75,8 @@ class TavernDeck(Deck):
             display = f"Animal of {suit.capitalize()}"
             cards.append(Card(suit, 'A', 1, 'animal', display))
 
-        # Jesters: 0 for 1-2; 1 for 3; 2 for 4 players
-        num_jesters = {1: 0, 2: 0, 3: 1, 4: 2}[num_players]
+        # Jesters: 0 for 2; 1 for 3; 2 for 4 players
+        num_jesters = {2: 0, 3: 1, 4: 2}[num_players]
         for _ in range(num_jesters):
             cards.append(Card('joker', 'Jester', 0, 'jester', 'Jester'))
 
