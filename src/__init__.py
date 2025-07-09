@@ -4,7 +4,6 @@ import os
 
 LOG_LEVEL = os.environ.get("REGICIDE_LOG_LEVEL", "INFO").upper()
 
-print(LOG_LEVEL)
 DATA_LEVEL_NUM = 15  # Between DEBUG (10) and INFO (20)
 logging.addLevelName(DATA_LEVEL_NUM, "DATA")
 

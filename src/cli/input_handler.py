@@ -1,4 +1,4 @@
-from .display import show_player_hand
+from cli.display import show_player_hand
 
 
 def prompt_action_choice(player):

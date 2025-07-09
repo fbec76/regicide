@@ -1,4 +1,4 @@
-from .card import Card
+from game.card import Card
 
 class Enemy(Card):
     def __init__(self, suit, rank, value, c_type, display_name, health, attack):
@@ -14,18 +14,11 @@ class Enemy(Card):
     def apply_shield(self, amount):
         self.shield += amount
 
-    def reset_shield(self):
-        self.shield = 0
-
     def is_defeated(self):
         return self.current_damage >= self.max_health
 
     def effective_attack(self):
         return max(self.attack - self.shield, 0)
-
-    def reset(self):
-        self.current_damage = 0
-        self.shield = 0
 
     def __repr__(self):
         return (f"{self.display_name}: "

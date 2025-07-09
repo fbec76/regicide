@@ -1,6 +1,6 @@
 from typing import List
 
-from .card import Card
+from game.card import Card
 
 
 def valid_combo(cards):
@@ -67,7 +67,7 @@ def resolve_suit_power(suit, value, enemy, discard_pile, tavern_deck, players, g
             restored = discard_pile.shuffle_and_return_n_cards(n)
             for card_ in restored:
                 tavern_deck.add_to_bottom(card_)
-            print(f"Healed {len(restored)} cards from discard into tavern deck.")
+            print(f"♥ {len(restored)} cards healed to tavern deck.")
     elif suit == 'diamonds':
         to_draw = value
         drawn = 0
@@ -84,12 +84,12 @@ def resolve_suit_power(suit, value, enemy, discard_pile, tavern_deck, players, g
             # If all are full or tavern empty, stop
             if idx > (n_players * 2):
                 break
-        print(f"Diamond effect: {drawn} cards drawn among players.")
+        print(f"♦ {drawn} cards drawn among players.")
     elif suit == 'clubs':
         pass
     elif suit == 'spades':
         enemy.apply_shield(value)
-        print(f"Spade effect: Enemy shielded by {value} (now {enemy.shield})")
+        print(f"♠ Enemy shielded by {value} → Total: {enemy.shield}")
 
 
 def total_attack(cards: List[Card], jester_active=False, enemy=None):
@@ -111,19 +111,6 @@ def total_attack(cards: List[Card], jester_active=False, enemy=None):
         return 2 * damage
     else:
         return damage
-
-
-def yield_allowed(game_state, player):
-    """
-    Check if player is allowed to yield this turn (not all others have yielded last turn).
-    """
-    return game_state.can_yield(player)
-
-
-def must_handle_enemy_attack(enemy, player):
-    """Returns enemy's attack after shields."""
-    return enemy.effective_attack()
-
 
 def exact_defeat(attack_so_far, enemy):
     """

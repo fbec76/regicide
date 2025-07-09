@@ -1,7 +1,7 @@
 import random
 from typing import List
 
-from .card import Card
+from game.card import Card
 
 class Deck:
     def __init__(self, cards: List[Card]=None):
@@ -9,11 +9,6 @@ class Deck:
 
     def shuffle(self):
         random.shuffle(self.cards)
-
-    def draw(self, n=1):
-        drawn = self.cards[:n]
-        self.cards = self.cards[n:]
-        return drawn
 
     def draw_one(self):
         if self.cards:

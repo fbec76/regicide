@@ -1,7 +1,9 @@
 from dotenv import load_dotenv
+
 load_dotenv()
 
 from __init__ import get_logger
+
 logger = get_logger("regicide.main")
 from game.rules import total_attack, is_enemy_immune, is_valid_play, exact_defeat, resolve_suit_power, can_play_jester
 from game.player import Player
@@ -12,7 +14,7 @@ from game.game_state import GameState
 # CLI
 from cli.display import (
     show_current_state, show_player_hand, show_invalid_action, show_win, show_loss,
-    show_yield_forbidden, show_discard_phase, show_played_cards, show_jester_played
+    show_yield_forbidden, show_discard_phase, show_played_cards, show_jester_played, show_welcome
 )
 from cli.input_handler import (
     prompt_action_choice, prompt_card_indexes_to_play, prompt_card_indexes_to_discard, prompt_next_player
@@ -49,7 +51,7 @@ def create_enemy_faces():
 def ask_player_names(num_players, max_hand_size):
     players = []
     for i in range(num_players):
-        name = input(f"Enter name for player {i + 1}: ").strip() or f'Player{i + 1}'
+        name = input(f"Name for player {i + 1}: ").strip() or f'Player{i + 1}'
         players.append(Player(name=name, hand_limit=max_hand_size))
     return players
 
@@ -97,21 +99,10 @@ def log_data_state(game_state):
 
 def main():
     logger.info("Game started.")
-    print("Welcome to Regicide (Terminal Edition)!")
-    print("How many players? (2-4)")
-    while True:
-        try:
-            num_players = int(input("> ").strip())
-            if num_players not in (2, 3, 4):
-                print("2, 3, or 4 players only.")
-                logger.warning(f"Invalid player count input: {num_players}")
-                continue
-            break
-        except ValueError as e:
-            print("Please enter a number (2-4).")
-            logger.warning(f"Non-integer player count input: {e}")
+    show_welcome()
+    num_players = ask_player_count()
 
-    hand_size_table = {1: 8, 2: 7, 3: 6, 4: 5}
+    hand_size_table = {2: 7, 3: 6, 4: 5}
     max_hand_size = hand_size_table[num_players]
 
     players = ask_player_names(num_players, max_hand_size)
@@ -162,7 +153,9 @@ def main():
                 game_state.update_enemy_immunity()
                 if game_state.current_enemy.suit == 'spades' and played_spades:
                     for spade_card in played_spades:
-                        resolve_suit_power('spades', spade_card.value, game_state.current_enemy, discard_pile=None, tavern_deck=None, players=None, game_state=game_state, acting_player=active_player)
+                        resolve_suit_power('spades', spade_card.value, game_state.current_enemy, discard_pile=None,
+                                           tavern_deck=None, players=None, game_state=game_state,
+                                           acting_player=active_player)
                     played_spades.clear()
                 next_player = prompt_next_player(list(game_state.players))
                 logger.info(f"Next player after Jester: {next_player.name}")
@@ -190,7 +183,7 @@ def main():
             show_played_cards(cards_played)
 
             total_value = sum(c.value for c in cards_played)
-            for suit in ('hearts', 'diamonds', 'clubs', 'spades'):
+            for suit in ('hearts', 'diamonds', 'spades'):
                 if any(c.suit == suit for c in cards_played):
                     any_card_of_suit = next(c for c in cards_played if c.suit == suit)
                     if not is_enemy_immune(game_state.current_enemy, any_card_of_suit, game_state.face_jester_played):
@@ -202,9 +195,10 @@ def main():
 
             damage = total_attack(cards_played, game_state.face_jester_played, enemy=game_state.current_enemy)
             game_state.current_enemy.apply_damage(damage)
-            logger.info(f"{active_player.name} dealt {damage} damage to enemy {game_state.current_enemy.display_name} (total damage: {game_state.current_enemy.current_damage})")
+            logger.info(
+                f"{active_player.name} dealt {damage} damage to enemy {game_state.current_enemy.display_name} (total damage: {game_state.current_enemy.current_damage})")
             print(
-                f"\033[93mTotal damage dealt to enemy: {damage}. (Damage so far: {game_state.current_enemy.current_damage})\033[0m")
+                f"\033[93mDamage dealt to enemy: {damage}. (Total: {game_state.current_enemy.current_damage})\033[0m")
 
             if game_state.current_enemy.is_defeated():
                 if exact_defeat(game_state.current_enemy.current_damage, game_state.current_enemy):
@@ -255,11 +249,29 @@ def main():
     show_win()
     logger.info("Game won!")
 
+
+def ask_player_count():
+    print("How many players will playing? (2-4)")
+    while True:
+        try:
+            num_players = int(input("> ").strip())
+            if num_players not in (2, 3, 4):
+                print("2, 3, or 4 players only.")
+                logger.warning(f"Invalid player count input: {num_players}")
+                continue
+            break
+        except ValueError as e:
+            print("Please enter a number (2-4).")
+            logger.warning(f"Non-integer player count input: {e}")
+    return num_players
+
+
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
         import traceback
+
         logger = get_logger("regicide.main")
         logger.error(f"Unhandled exception: {e}\n{traceback.format_exc()}")
         print("\033[91mA fatal error occurred. See regicide.log for details.\033[0m")
