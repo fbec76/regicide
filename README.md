@@ -59,6 +59,22 @@ pip install -r requirements.txt
 python src/main.py
 ```
 
+## Running Tests
+
+This project uses [pytest](https://docs.pytest.org/) for testing. To run all tests, make sure you have pytest installed:
+
+```bash
+pip install pytest
+```
+
+Then run the tests from the project root:
+
+```bash
+pytest tests
+```
+
+This will automatically discover and run all test files in the `tests/` directory.
+
 ## Resources
 
 - [Official Regicide Rules PDF](https://www.regicidegame.com/site_files/33132/upload_files/RegicideRulesA4.pdf)
