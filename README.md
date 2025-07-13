@@ -21,7 +21,7 @@ Regicide is a cooperative card game where players work together to defeat a seri
   - Each suit has a unique power (Hearts heal, Diamonds draw, Clubs double damage, Spades shield the enemy).
   - Special cards (Animals/Aces and Jesters) provide unique effects and combos.
   - Players must manage their hand size and cooperate to avoid defeat.
-  - The game is lost if all players are unable to play or discard as required.
+  - The game is lost if at least one players are unable to play or discard as required.
 
 ## Technical Overview
 
