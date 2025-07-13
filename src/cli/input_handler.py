@@ -11,7 +11,7 @@ def prompt_action_choice(player):
             return "yield"
         print("\033[91mInvalid input. Enter 1 or 2.\033[0m")
 
-def _prompt_card_indexes(
+def prompt_card_indexes(
     player,
     prompt_message,
     extra_validation_fn=None,
@@ -23,8 +23,7 @@ def _prompt_card_indexes(
         try:
             in_str = input(prompt_message).strip()
             if not in_str:
-                print("\033[93mEnter at least one index.\033[0m")
-                continue
+                return None
             indexes = [int(idx) for idx in in_str.split()]
             if any(idx < 0 or idx >= len(player_cards) for idx in indexes):
                 print("\033[91mInvalid card index.\033[0m")
@@ -48,16 +47,16 @@ def prompt_card_indexes_to_play(player):
     print(" - Valid combo (2-4 same value, max total 10)")
     print(" - Animal + one card (no jesters), or two Animals")
     print("Enter indexes separated by spaces (e.g., 0 3):")
-    return _prompt_card_indexes(player, "\033[92mIndexes:\033[0m ")
+    return prompt_card_indexes(player, "\033[92mEnter card indexes (space-separated, leave empty to yield):\033[0m ")
 
 def prompt_card_indexes_to_discard(player, required_value):
     def enough(cards):
         total = sum(c.value for c in cards)
-        print(f"\033[93mTotal selected value: {total}\033[0m")
+        print(f"\033[93mTotal discard value: {total} ({len(cards)} card{'s' if len(cards) != 1 else ''})\033[0m")
         return total >= required_value
 
     show_player_hand(player)
-    return _prompt_card_indexes(
+    return prompt_card_indexes(
         player,
         "\033[92mEnter discard indexes (no repeats):\033[0m ",
         extra_validation_fn=enough,
@@ -78,6 +77,3 @@ def prompt_next_player(players):
                 print("\033[91mInvalid choice.\033[0m")
         except ValueError:
             print("\033[91mEnter a valid number.\033[0m")
-
-def prompt_continue():
-    input("\033[90mPress Enter to continue...\033[0m")

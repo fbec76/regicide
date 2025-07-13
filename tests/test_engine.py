@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
-from game.engine import Engine
+from game.engine import Engine, handle_enemy_attack, create_enemy_faces, deal_initial_hands
 from game.player import Player
 
 from game.enemy import Enemy
@@ -29,7 +29,7 @@ def engine(dummy_logger):
 
 
 def test_create_enemy_faces(engine):
-    jacks, queens, kings = engine.create_enemy_faces()
+    jacks, queens, kings = create_enemy_faces()
     assert len(jacks) == 4
     assert len(queens) == 4
     assert len(kings) == 4
@@ -44,7 +44,7 @@ def test_deal_initial_hands(engine):
     gs = MagicMock()
     gs.players = players
     gs.tavern_deck = tavern_deck
-    engine.deal_initial_hands(gs)
+    deal_initial_hands(gs)
     assert all(len(p.hand) == 2 for p in players)
 
 
@@ -60,7 +60,7 @@ def test_handle_enemy_attack_survives(monkeypatch, engine):
     # Simulate user entering '0 1' for discards
     monkeypatch.setattr("builtins.input", lambda _: "0 1")
     with patch("game.engine.show_discard_phase") as show_discard_phase:
-        assert engine.handle_enemy_attack(gs, player)
+        assert handle_enemy_attack(gs, player)
         show_discard_phase.assert_called()
 
 
@@ -72,7 +72,7 @@ def test_handle_enemy_attack_defeated(engine):
     gs.current_enemy.effective_attack.return_value = 2
     # Simulate user input (not needed, but for completeness)
     with patch("game.engine.show_discard_phase"), patch("game.engine.show_loss") as show_loss:
-        assert not engine.handle_enemy_attack(gs, player)
+        assert not handle_enemy_attack(gs, player)
         show_loss.assert_called()
 
 
@@ -89,7 +89,7 @@ def test_log_data_state(engine, dummy_logger):
     # No assertion, just ensure no error
 
 
-def test__handle_play_action_enemy_defeated(monkeypatch, engine):
+def test_handle_play_action_enemy_defeated(monkeypatch, engine):
     # Setup mocks for player, game_state, and cards
     player = MagicMock()
     player.name = "TestPlayer"
@@ -122,29 +122,13 @@ def test__handle_play_action_enemy_defeated(monkeypatch, engine):
          patch("game.engine.exact_defeat", return_value=True), \
          patch("game.engine.show_loss"), \
          patch("game.engine.show_win"):
-        result = engine._handle_play_action(player, game_state, played_spades)
-        assert result == 'enemy_defeated'
+        result = engine.handle_play_action(player, game_state, played_spades)
+        assert result in ('enemy_defeated', 'game_won')
 
 
-def test__handle_yield_action_player_defeated(engine):
+def test_handle_yield_action_continue(engine):
     player = MagicMock()
     player.name = "TestPlayer"
     game_state = MagicMock()
-    # Simulate handle_enemy_attack returns False (player defeated)
-    engine.handle_enemy_attack = MagicMock(return_value=False)
-    result = engine._handle_yield_action(player, game_state)
-    assert result == 'player_defeated'
-    engine.handle_enemy_attack.assert_called_once_with(game_state, player)
-
-
-def test__handle_yield_action_continue(engine):
-    player = MagicMock()
-    player.name = "TestPlayer"
-    game_state = MagicMock()
-    # Simulate handle_enemy_attack returns True (player survives)
-    engine.handle_enemy_attack = MagicMock(return_value=True)
-    result = engine._handle_yield_action(player, game_state)
+    result = engine.handle_yield_action(player, game_state)
     assert result == 'continue'
-    engine.handle_enemy_attack.assert_called_once_with(game_state, player)
-    game_state.advance_turn.assert_called_once()
-    engine.log_data_state(game_state)

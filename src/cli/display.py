@@ -106,6 +106,11 @@ def print_cards(cards, highlight_idxs=None):
 def print_separator(char="=", width=MAX_WIDTH):
     print(char * width)
 
+def show_warning(msg):
+    print(f"\033[93m⚠ {msg}\033[0m")
+
+def show_damage_dealt(damage):
+    print(f"\033[92mYou dealt {damage} damage!\033[0m")
 
 def show_enemy(enemy, game_state):
     print_separator("=")
@@ -233,6 +238,14 @@ def show_played_cards(cards):
     print_cards(cards)
     print_separator("-")
 
+def show_enemy_defeated(enemy, exact=False):
+    if exact:
+        print(f"\033[92mYou defeated the {enemy.display_name} exactly!\033[0m")
+    else:
+        print(f"\033[92mYou defeated the {enemy.display_name}!\033[0m")
+
+def show_new_enemy():
+    print("\033[93mA new enemy appears!\033[0m")
 
 def show_current_state(game_state):
     show_enemy(game_state.current_enemy, game_state)
