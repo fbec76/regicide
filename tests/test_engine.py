@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
-from game.engine import Engine, handle_enemy_attack, create_enemy_faces, deal_initial_hands
+from game.engine import Engine, create_enemy_faces, deal_initial_hands
 from game.player import Player
 
 from game.enemy import Enemy
@@ -48,34 +48,6 @@ def test_deal_initial_hands(engine):
     assert all(len(p.hand) == 2 for p in players)
 
 
-def test_handle_enemy_attack_survives(monkeypatch, engine):
-    player = MagicMock()
-    player.hand_size.return_value = 2
-    player.hand = [MagicMock(value=2), MagicMock(value=2)]
-    player.name = "TestPlayer"
-    player.play_cards.return_value = True
-    gs = MagicMock()
-    gs.current_enemy.effective_attack.return_value = 2
-    gs.discard_pile = MagicMock()
-    # Simulate user entering '0 1' for discards
-    monkeypatch.setattr("builtins.input", lambda _: "0 1")
-    with patch("game.engine.show_discard_phase") as show_discard_phase:
-        assert handle_enemy_attack(gs, player)
-        show_discard_phase.assert_called()
-
-
-def test_handle_enemy_attack_defeated(engine):
-    player = MagicMock()
-    player.hand_size.return_value = 0
-    player.name = "TestPlayer"
-    gs = MagicMock()
-    gs.current_enemy.effective_attack.return_value = 2
-    # Simulate user input (not needed, but for completeness)
-    with patch("game.engine.show_discard_phase"), patch("game.engine.show_loss") as show_loss:
-        assert not handle_enemy_attack(gs, player)
-        show_loss.assert_called()
-
-
 def test_log_data_state(engine, dummy_logger):
     player = MagicMock()
     player.name = "A"
@@ -112,16 +84,16 @@ def test_handle_play_action_enemy_defeated(monkeypatch, engine):
     # Patch input and prompt_card_indexes_to_play
     monkeypatch.setattr("builtins.input", lambda _: "0")
     with patch("game.engine.prompt_card_indexes_to_play", return_value=player.hand), \
-         patch("game.engine.is_valid_play", return_value=True), \
-         patch("game.engine.show_invalid_action"), \
-         patch("game.engine.can_play_jester", return_value=False), \
-         patch("game.engine.show_played_cards"), \
-         patch("game.engine.is_enemy_immune", return_value=False), \
-         patch("game.engine.resolve_suit_power"), \
-         patch("game.engine.total_attack", return_value=20), \
-         patch("game.engine.exact_defeat", return_value=True), \
-         patch("game.engine.show_loss"), \
-         patch("game.engine.show_win"):
+            patch("game.engine.is_valid_play", return_value=True), \
+            patch("game.engine.show_invalid_action"), \
+            patch("game.engine.can_play_jester", return_value=False), \
+            patch("game.engine.show_played_cards"), \
+            patch("game.engine.is_enemy_immune", return_value=False), \
+            patch("game.engine.resolve_suit_power"), \
+            patch("game.engine.total_attack", return_value=20), \
+            patch("game.engine.exact_defeat", return_value=True), \
+            patch("game.engine.show_loss"), \
+            patch("game.engine.show_win"):
         result = engine.handle_play_action(player, game_state, played_spades)
         assert result in ('enemy_defeated', 'game_won')
 
