@@ -1,3 +1,5 @@
+from typing import List
+
 from cli.display import (
     show_current_state, show_player_hand, show_invalid_action, show_win, show_loss,
     show_discard_phase, show_played_cards, show_jester_played, show_enemy_defeated,
@@ -6,9 +8,11 @@ from cli.display import (
 from cli.input_handler import (
     prompt_card_indexes_to_play, prompt_card_indexes_to_discard, prompt_next_player
 )
+from game.card import Card
 from game.deck import TavernDeck, CastleDeck, DiscardPile
 from game.enemy import Enemy
 from game.game_state import GameState
+from game.player import Player
 from game.rules import total_attack, is_enemy_immune, is_valid_play, exact_defeat, resolve_suit_power, can_play_jester
 
 
@@ -37,31 +41,13 @@ def create_enemy_faces():
     return jacks, queens, kings
 
 
-def deal_initial_hands(game_state):
+def deal_initial_hands(game_state: GameState):
     players = list(game_state.players)
     for _ in range(players[0].hand_limit):
         for p in players:
             card = game_state.tavern_deck.draw_one()
             if card:
                 p.add_card(card)
-
-
-def handle_enemy_attack(game_state, player):
-    enemy_attack = game_state.current_enemy.effective_attack()
-    if enemy_attack > 0:
-        show_discard_phase(player, enemy_attack)
-        if player.hand_size() == 0:
-            show_loss(f"{player.name} has no cards left to play and is defeated!")
-            return False
-        if sum(c.value for c in player.hand) < enemy_attack:
-            show_loss(f"{player.name} cannot discard enough cards to cover the enemy's attack of {enemy_attack}!")
-            return False
-        discards = prompt_card_indexes_to_discard(player, enemy_attack)
-        player.play_cards(discards)
-        for d in discards:
-            game_state.discard_pile.add_to_top(d)
-        return True
-    return True
 
 
 class Engine:
@@ -73,7 +59,7 @@ class Engine:
         self.logger = logger
         self.get_logger = get_logger
 
-    def log_data_state(self, game_state):
+    def log_data_state(self, game_state: GameState):
         for p in game_state.players:
             self.logger.data(f"HAND {p.name}: {[str(c) for c in p.hand]}")
         self.logger.data(f"TAVERN DECK: {[str(c) for c in game_state.tavern_deck.cards]}")
@@ -81,7 +67,7 @@ class Engine:
         self.logger.data(f"DISCARD PILE: {[str(c) for c in game_state.discard_pile.cards]}")
         self.logger.data(f"UPCOMING ENEMIES: {[str(c) for c in game_state.castle_deck.cards]}")
 
-    def handle_jester_played(self, active_player, game_state, played_spades):
+    def handle_jester_played(self, active_player: Player, game_state: GameState, played_spades: List[Card]):
         show_jester_played()
         self.logger.info(f"Jester played by {active_player.name}")
         game_state.face_jester_played = True
@@ -97,7 +83,23 @@ class Engine:
         while game_state.get_active_player() != next_player:
             game_state.advance_turn()
 
-    def handle_enemy_defeat(self, game_state, active_player):
+    def handle_enemy_attack(self, game_state: GameState, discards: List[Card], needed: int):
+        active_player = game_state.get_active_player()
+        if active_player.hand_size() == 0:
+            show_loss(f"{active_player.name} has no cards left to discard and is killed by the enemy!")
+            obs = self.get_observation()
+            return obs, -10, True, {"result": "player_defeated"}
+        if sum(c.value for c in discards) < needed:
+            show_loss(
+                f"{active_player.name} cannot discard enough cards to cover the enemy's attack of {needed}!")
+            obs = self.get_observation()
+            return obs, -10, True, {"result": "player_defeated"}
+        active_player.play_cards(discards)
+        for d in discards:
+            game_state.discard_pile.add_to_top(d)
+        return 'continue'
+
+    def handle_enemy_defeat(self, game_state: GameState):
         if exact_defeat(game_state.current_enemy.current_damage, game_state.current_enemy):
             show_enemy_defeated(game_state.current_enemy, exact=True)
             self.logger.info(f"Enemy {game_state.current_enemy.display_name} defeated EXACTLY.")
@@ -106,9 +108,9 @@ class Engine:
             show_enemy_defeated(game_state.current_enemy, exact=False)
             self.logger.info(f"Enemy {game_state.current_enemy.display_name} defeated.")
             game_state.discard_pile.add_to_top(game_state.current_enemy)
-        for c in game_state.played_this_enemy:
+        for c in game_state.cards_against_enemy:
             game_state.discard_pile.add_to_top(c)
-        game_state.played_this_enemy.clear()
+        game_state.cards_against_enemy.clear()
         next_enemy = game_state.castle_deck.draw_one()
         self.logger.info(f"Next enemy: {next_enemy.display_name if next_enemy else 'None (game won)'}")
         game_state.current_enemy = next_enemy
@@ -116,7 +118,8 @@ class Engine:
         if next_enemy is not None:
             show_new_enemy()
 
-    def handle_suit_powers(self, cards_played, game_state, active_player, total_value):
+    def handle_suit_powers(self, cards_played: List[Card], game_state: GameState, active_player: Player
+                           , total_value: int):
         for suit in ('hearts', 'diamonds', 'spades'):
             if any(c.suit == suit for c in cards_played):
                 any_card_of_suit = next(c for c in cards_played if c.suit == suit)
@@ -127,7 +130,7 @@ class Engine:
                         game_state.tavern_deck, list(game_state.players), game_state, active_player
                     )
 
-    def handle_yield_action(self, active_player, game_state):
+    def handle_yield_action(self, active_player: Player, game_state: GameState):
         self.logger.info(f"{active_player.name} yields.")
         self.logger.data(f"YIELD by {active_player.name}")
         if not game_state.can_yield(active_player):
@@ -137,7 +140,7 @@ class Engine:
         self.log_data_state(game_state)
         return 'continue'
 
-    def handle_play_action(self, active_player, game_state, played_spades):
+    def handle_play_action(self, active_player: Player, game_state: GameState, played_spades: List[Card]):
         while True:
             cards_played = prompt_card_indexes_to_play(active_player)
             # If no cards are played, treat as yield
@@ -161,15 +164,15 @@ class Engine:
                 played_spades.append(c)
         self.handle_player_attack(active_player, cards_played, game_state)
         if game_state.current_enemy.is_defeated():
-            self.handle_enemy_defeat(game_state, active_player)
+            self.handle_enemy_defeat(game_state)
             if game_state.is_game_won():
                 return 'game_won'
             return 'enemy_defeated'
         return 'continue'
 
-    def handle_player_attack(self, active_player, cards_played, game_state):
+    def handle_player_attack(self, active_player: Player, cards_played: List[Card], game_state: GameState):
         active_player.play_cards(cards_played)
-        game_state.played_this_enemy.extend(cards_played)
+        game_state.cards_against_enemy.extend(cards_played)
         show_played_cards(cards_played)
         total_value = sum(c.value for c in cards_played)
         self.handle_suit_powers(cards_played, game_state, active_player, total_value)
@@ -179,7 +182,7 @@ class Engine:
             f"{active_player.name} dealt {damage} damage to enemy {game_state.current_enemy.display_name} (total damage: {game_state.current_enemy.current_damage})")
         show_damage_dealt(damage)
 
-    def run(self, players):
+    def run(self, players: List[Player]):
         self.logger.info("Game started.")
         num_players = len(players)
         jacks, queens, kings = create_enemy_faces()
@@ -188,54 +191,57 @@ class Engine:
         tavern_deck = TavernDeck(num_players)
         self.logger.info("Tavern deck created and shuffled.")
         discard_pile = DiscardPile()
-        game_state = GameState(players=players, tavern_deck=tavern_deck, castle_deck=castle_deck,
-                               discard_pile=discard_pile)
+        self.game_state = GameState(players=players, tavern_deck=tavern_deck, castle_deck=castle_deck,
+                                    discard_pile=discard_pile)
         self.logger.info("Game state initialized.")
-        deal_initial_hands(game_state)
+        deal_initial_hands(self.game_state)
         self.logger.info("Initial hands dealt.")
         self.phase = 'attack'
-        while not game_state.is_game_won():
-            active_player = game_state.get_active_player()
+        while not self.game_state.is_game_won():
+            active_player = self.game_state.get_active_player()
             self.logger.info(f"Turn: {active_player.name}")
-            self.log_data_state(game_state)
-            show_current_state(game_state)
-            show_player_hand(active_player)
+            self.log_data_state(self.game_state)
             if active_player.hand_size() == 0:
                 show_loss(f"{active_player.name} has no cards left to play and is defeated!")
                 self.logger.info(f"{active_player.name} has no cards left to play and is defeated!")
                 return
+            show_current_state(self.game_state)
+            show_player_hand(active_player)
             played_spades = []
             while True:
                 if self.phase == 'attack':
-                    result = self.handle_play_action(active_player, game_state, played_spades)
+                    result = self.handle_play_action(active_player, self.game_state, played_spades)
                     if result in ('jester', 'enemy_defeated'):
                         break
-                    enemy_attack = game_state.current_enemy.effective_attack()
+                    enemy_attack = self.game_state.current_enemy.effective_attack()
                     if enemy_attack > 0:
                         self.phase = 'defense'
                         continue
                     else:
-                        game_state.advance_turn()
-                        self.log_data_state(game_state)
+                        self.game_state.advance_turn()
+                        self.log_data_state(self.game_state)
                         self.phase = 'attack'
                         break
                 elif self.phase == 'defense':
                     # Defense phase: handle enemy attack
-                    survived = handle_enemy_attack(game_state, active_player)
+                    needed = self.game_state.current_enemy.effective_attack()
+                    show_discard_phase(self.game_state.get_active_player(), needed)
+                    survived = self.handle_enemy_attack(self.game_state,
+                                                        prompt_card_indexes_to_discard(active_player, needed), needed)
                     if not survived:
                         return
-                    game_state.advance_turn()
-                    self.log_data_state(game_state)
+                    self.game_state.advance_turn()
+                    self.log_data_state(self.game_state)
                     self.phase = 'attack'
                     break
-            if game_state.check_loss():
+            if self.game_state.check_loss():
                 show_loss("A player could not satisfy enemy attack or no legal plays remain.")
                 self.logger.error("Game lost: a player could not satisfy enemy attack or no legal plays remain.")
                 return
         show_win()
         self.logger.info("Game won!")
 
-    def reset(self, players):
+    def reset(self, players: List[Player]):
         # Initialize game state and phase for Gym interface
         num_players = len(players)
         jacks, queens, kings = create_enemy_faces()
@@ -262,7 +268,8 @@ class Engine:
         else:
             raise Exception(f"Unknown phase: {self.phase}")
         self.done = done
-        return obs, reward, done, info
+        step_penalty = 0.01
+        return obs, reward - step_penalty, done, info
 
     def step_attack(self, action):
         game_state = self.game_state
@@ -279,45 +286,42 @@ class Engine:
                 if enemy_attack > 0:
                     self.phase = "defense"
                     obs = self.get_observation()
-                    return obs, 0, False, {"result": "yielded_defense_required"}
+                    return obs, -0.1, False, {"result": "yielded_defense_required"}
                 else:
                     game_state.advance_turn()
                     self.phase = "attack"
                     obs = self.get_observation()
-                    return obs, 0, False, {"result": "yielded_turn_advanced"}
+                    return obs, -0.1, False, {"result": "yielded_turn_advanced"}
             if not is_valid_play(cards_played):
                 obs = self.get_observation()
                 return obs, -1, False, {"error": "Invalid play"}
             if can_play_jester(cards_played):
                 self.handle_jester_played(active_player, game_state, played_spades)
                 obs = self.get_observation()
-                return obs, 0, False, {"result": "jester"}
+                return obs, 0.2, False, {"result": "jester"}
             for c in cards_played:
-                if c.suit == game_state.current_enemy.suit and game_state.enemy_immunity:
-                    obs = self.get_observation()
-                    return obs, -1, False, {"error": "Immunity confirmation required"}
                 if c.suit == 'spades' and game_state.current_enemy.suit == 'spades' and game_state.enemy_immunity:
                     played_spades.append(c)
             self.handle_player_attack(active_player, cards_played, game_state)
             if game_state.current_enemy.is_defeated():
-                self.handle_enemy_defeat(game_state, active_player)
+                self.handle_enemy_defeat(game_state)
                 if game_state.is_game_won():
                     obs = self.get_observation()
-                    return obs, 1, True, {"result": "win"}
+                    return obs, 10, True, {"result": "win"}
                 else:
                     obs = self.get_observation()
-                    return obs, 0.5, False, {"result": "enemy_defeated"}
+                    return obs, 2, False, {"result": "enemy_defeated"}
             else:
                 enemy_attack = game_state.current_enemy.effective_attack()
                 if enemy_attack > 0:
                     self.phase = "defense"
                     obs = self.get_observation()
-                    return obs, 0, False, {"result": "defense_required"}
+                    return obs, 0.2, False, {"result": "defense_required"}
                 else:
                     game_state.advance_turn()
                     self.phase = "attack"
                     obs = self.get_observation()
-                    return obs, 0, False, {"result": "turn_advanced"}
+                    return obs, 0.2, False, {"result": "turn_advanced"}
         else:
             obs = self.get_observation()
             return obs, -1, False, {"error": "Unknown action type"}
@@ -327,24 +331,16 @@ class Engine:
         active_player = game_state.get_active_player()
         if action["type"] == "defend":
             discards = action["cards"]
-            needed = game_state.current_enemy.effective_attack()
-            if active_player.hand_size() == 0:
-                show_loss(f"{active_player.name} has no cards left to discard and is killed by the enemy!")
-                obs = self.get_observation()
-                return obs, -1, True, {"result": "player_defeated"}
-            if sum(c.value for c in discards) < needed:
-                show_loss(f"{active_player.name} cannot discard enough cards to cover the enemy's attack of {needed}!")
-                obs = self.get_observation()
-                return obs, -1, True, {"result": "player_defeated"}
-            active_player.play_cards(discards)
-            for d in discards:
-                game_state.discard_pile.add_to_top(d)
+            enemy_attack_result = self.handle_enemy_attack(game_state, discards,
+                                                           self.game_state.current_enemy.effective_attack())
+            if enemy_attack_result != 'continue':
+                return enemy_attack_result
             print(f"{active_player.name} discarded {len(discards)} card(s) to cover attack.")
             # After defense, always advance turn
             game_state.advance_turn()
             self.phase = "attack"
             obs = self.get_observation()
-            return obs, 0, False, {"result": "defense_success"}
+            return obs, 0.2, False, {"result": "defense_success"}
         else:
             obs = self.get_observation()
             return obs, -1, False, {"error": "Unknown defense action"}

@@ -27,7 +27,7 @@ class GameState:
         self.yields_in_a_row = {p.name: False for p in self.players}
 
         # For combo play
-        self.played_this_enemy = []  # Cards played by all players against this enemy
+        self.cards_against_enemy = []  # Cards played by all players against this enemy
 
     def get_active_player(self):
         return self.players[0]

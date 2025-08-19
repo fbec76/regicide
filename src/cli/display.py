@@ -249,7 +249,7 @@ def show_new_enemy():
 
 def show_current_state(game_state):
     show_enemy(game_state.current_enemy, game_state)
-    show_play_area(game_state.played_this_enemy)
+    show_play_area(game_state.cards_against_enemy)
     show_players(list(game_state.players))
 
 
