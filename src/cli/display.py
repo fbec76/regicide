@@ -39,7 +39,7 @@ def manual_center(text, width):
     return ' ' * left + text + ' ' * right
 
 
-def card_ascii(card, width=9, highlight=False):
+def card_ascii(card, width=9, highlight=False, as_enemy=False):
     """
     Returns a list of strings for the card's ASCII art, with highlighting if specified.
     Handles all card types & centers attack|health for enemies for any reasonable width>=7.
@@ -65,7 +65,7 @@ def card_ascii(card, width=9, highlight=False):
         attack = card.attack
         health = card.max_health
         # Center the "hp|attack" string for arbitrary width
-        ha = f"{health}|{attack}"
+        ha = f"{health}|{attack}" if as_enemy else f"{attack}"
         center = f"{hl}{ha}{endhl}"
         center = manual_center(center, width - 2)
     else:
@@ -120,7 +120,7 @@ def show_enemy(enemy, game_state):
     discard_card_lines = card_ascii(
         Card(suit="D", rank="D", c_type="int", value=len(game_state.discard_pile), display_name="Discard"),
         width=9, highlight=True)
-    enemy_card_lines = card_ascii(enemy, width=9, highlight=True)
+    enemy_card_lines = card_ascii(enemy, width=9, highlight=True, as_enemy=True)
     hp = enemy.max_health - enemy.current_damage
     atk = enemy.effective_attack()
     suit_immunity = 'ON' if game_state.enemy_immunity else 'OFF'

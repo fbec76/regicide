@@ -15,7 +15,8 @@ def prompt_card_indexes(
     player,
     prompt_message,
     extra_validation_fn=None,
-    validation_fail_message=None
+    validation_fail_message=None,
+    discard_phase=False
 ):
     """Helper to prompt card index(es) with optional validation."""
     player_cards = player.hand
@@ -23,7 +24,11 @@ def prompt_card_indexes(
         try:
             in_str = input(prompt_message).strip()
             if not in_str:
-                return None
+                if discard_phase:
+                    print("\033[93mNo input provided. You must select cards to discard.\033[0m")
+                    continue
+                else:
+                    return None
             indexes = [int(idx) for idx in in_str.split()]
             if any(idx < 0 or idx >= len(player_cards) for idx in indexes):
                 print("\033[91mInvalid card index.\033[0m")
@@ -60,7 +65,8 @@ def prompt_card_indexes_to_discard(player, required_value):
         player,
         "\033[92mEnter discard indexes (no repeats):\033[0m ",
         extra_validation_fn=enough,
-        validation_fail_message=f"Total value must be ≥ {required_value}."
+        validation_fail_message=f"Total value must be ≥ {required_value}.",
+        discard_phase=True
     )
 
 def prompt_next_player(players):

@@ -83,18 +83,21 @@ class Engine:
         while game_state.get_active_player() != next_player:
             game_state.advance_turn()
 
-    def handle_enemy_attack(self, game_state: GameState, discards: List[Card], needed: int):
+    def defense_validation(self, game_state: GameState, needed: int):
         active_player = game_state.get_active_player()
         if active_player.hand_size() == 0:
             show_loss(f"{active_player.name} has no cards left to discard and is killed by the enemy!")
             obs = self.get_observation()
-            return obs, -10, True, {"result": "player_defeated"}
-        if sum(c.value for c in discards) < needed:
+            return False, obs, {"result": "player_defeated"}
+        if sum(c.value for c in active_player.hand) < needed:
             show_loss(
                 f"{active_player.name} cannot discard enough cards to cover the enemy's attack of {needed}!")
             obs = self.get_observation()
-            return obs, -10, True, {"result": "player_defeated"}
-        active_player.play_cards(discards)
+            return False, obs, {"result": "player_defeated"}
+        return True, None, {}
+
+    def handle_enemy_defense(self, game_state: GameState, discards: List[Card]):
+        game_state.get_active_player().play_cards(discards)
         for d in discards:
             game_state.discard_pile.add_to_top(d)
         return 'continue'
@@ -226,10 +229,13 @@ class Engine:
                     # Defense phase: handle enemy attack
                     needed = self.game_state.current_enemy.effective_attack()
                     show_discard_phase(self.game_state.get_active_player(), needed)
-                    survived = self.handle_enemy_attack(self.game_state,
-                                                        prompt_card_indexes_to_discard(active_player, needed), needed)
-                    if not survived:
-                        return
+                    defense_validation = self.defense_validation(self.game_state, needed)
+                    if not defense_validation[0]:
+                        obs = defense_validation[1]
+                        return obs, -10, True, defense_validation[2]
+                    else:
+                        self.handle_enemy_defense(self.game_state,
+                                                  prompt_card_indexes_to_discard(active_player, needed))
                     self.game_state.advance_turn()
                     self.log_data_state(self.game_state)
                     self.phase = 'attack'
@@ -331,10 +337,13 @@ class Engine:
         active_player = game_state.get_active_player()
         if action["type"] == "defend":
             discards = action["cards"]
-            enemy_attack_result = self.handle_enemy_attack(game_state, discards,
-                                                           self.game_state.current_enemy.effective_attack())
-            if enemy_attack_result != 'continue':
-                return enemy_attack_result
+            needed = game_state.current_enemy.effective_attack()
+            defense_validation = self.defense_validation(game_state, needed)
+            if not defense_validation[0]:
+                obs = defense_validation[1]
+                return obs, -10, True, defense_validation[2]
+            else:
+                self.handle_enemy_defense(game_state, discards)
             print(f"{active_player.name} discarded {len(discards)} card(s) to cover attack.")
             # After defense, always advance turn
             game_state.advance_turn()
