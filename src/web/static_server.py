@@ -34,11 +34,11 @@ STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 # the unmodified test suite never binds fixed ports.
 HTTP_PORT_OFFSET = 1
 
-# ``connect-src`` lists the default WS port AND the actual one so custom
-# ``--port`` starts still connect. Same-origin default-src covers the static
-# assets themselves.
+# ``connect-src`` lists the WS URLs so custom ``--port`` starts still
+# connect; the list is built (deduped) in ``start_static_server``. Same-origin
+# default-src covers the static assets themselves.
 CSP_TEMPLATE = ("default-src 'self'; "
-                "connect-src ws://localhost:8765 ws://localhost:{ws_port}; "
+                "connect-src {ws_urls}; "
                 "style-src 'self'")
 
 
@@ -88,7 +88,11 @@ def start_static_server(host: str, ws_port: int, logger) -> None:
     lives). Fails fast on bind errors (e.g. EADDRINUSE): logs a clear
     message and re-raises so the misconfiguration is not silently ignored."""
     port = 0 if ws_port == 0 else ws_port + HTTP_PORT_OFFSET
-    StaticFileHandler.csp_header = CSP_TEMPLATE.format(ws_port=ws_port)
+    # Dedupe: when the actual WS port IS the default (8765) the same URL
+    # must not appear twice (dict.fromkeys keeps first-seen order).
+    ws_urls = " ".join(dict.fromkeys(
+        ["ws://localhost:8765", f"ws://localhost:{ws_port}"]))
+    StaticFileHandler.csp_header = CSP_TEMPLATE.format(ws_urls=ws_urls)
     StaticFileHandler.logger = logger
     try:
         server = ThreadingHTTPServer((host, port), StaticFileHandler)

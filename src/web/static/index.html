@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Regicide — The Castle Falls</title>
+  <link rel="stylesheet" href="css/style.css">
+  <!-- ES modules are deferred by default: the DOM is ready when app.js runs. -->
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <!-- Connection banner: static chrome, text filled via textContent only. -->
+  <div id="connection-banner" class="banner" role="status" hidden>
+    <span id="banner-text"></span>
+    <button id="banner-lobby-btn" type="button">Return to lobby</button>
+  </div>
+
+  <main id="app">
+    <!-- ================= LOBBY ================= -->
+    <section id="lobby" class="screen" hidden>
+      <h1 class="game-title">Regicide</h1>
+      <p class="tagline">Slay the monarchs of the castle — together.</p>
+
+      <div id="lobby-forms" class="lobby-panels">
+        <form id="create-form" class="panel">
+          <h2>Forge a Quest</h2>
+          <label>Your name
+            <input id="create-name" name="player_name" maxlength="24" autocomplete="off" required>
+          </label>
+          <label>Heroes at the table
+            <select id="create-count" name="num_players">
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+            </select>
+          </label>
+          <button type="submit" class="btn btn--primary">Create game</button>
+        </form>
+
+        <form id="join-form" class="panel">
+          <h2>Join a Quest</h2>
+          <label>Session id
+            <input id="join-session" name="session_id" maxlength="8" autocomplete="off" required>
+          </label>
+          <label>Your name
+            <input id="join-name" name="player_name" maxlength="24" autocomplete="off" required>
+          </label>
+          <button type="submit" class="btn btn--primary">Join game</button>
+        </form>
+      </div>
+
+      <div id="waiting" class="panel waiting" hidden>
+        <h2>Waiting for heroes…</h2>
+        <p>Share this session id:
+          <strong id="session-id" class="session-id"></strong>
+        </p>
+        <p id="waiting-count"></p>
+        <ul id="waiting-players" class="waiting-players"></ul>
+      </div>
+
+      <p id="lobby-note" class="note"></p>
+    </section>
+
+    <!-- ================= GAME TABLE ================= -->
+    <section id="table" class="screen" hidden>
+      <div id="castle-strip" aria-label="Castle progress"></div>
+
+      <div id="opp-left" class="opp-col" aria-label="Opponents (left)"></div>
+      <div id="enemy-area" aria-label="Current enemy"></div>
+      <div id="opp-right" class="opp-col" aria-label="Opponents (right)"></div>
+
+      <div id="play-area" aria-label="Play area">
+        <div id="cards-against-enemy"></div>
+        <div id="preview-panel"></div>
+      </div>
+
+      <div id="hand" aria-label="Your hand"></div>
+
+      <ul id="log" class="log" aria-live="polite" aria-label="Turn log"></ul>
+      <div id="action-bar" aria-label="Actions"></div>
+
+      <button id="leave-btn" type="button" class="btn btn--ghost">Leave game</button>
+    </section>
+
+    <!-- ================= GAME OVER ================= -->
+    <section id="gameover" class="screen screen--center" hidden>
+      <h1 id="gameover-title"></h1>
+      <p id="gameover-detail"></p>
+      <button id="gameover-lobby-btn" type="button" class="btn btn--primary">Return to lobby</button>
+    </section>
+  </main>
+
+  <!-- Jester next-player chooser (modal; list rendered via textContent only) -->
+  <div id="jester-modal" class="modal-backdrop" hidden>
+    <div class="modal panel" role="dialog" aria-modal="true" aria-labelledby="jester-title">
+      <h2 id="jester-title">The Jester asks…</h2>
+      <p>Choose which hero takes the next turn.</p>
+      <div id="jester-players" class="jester-players"></div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,900 @@
+/*
+ * Regicide web client — dark fantasy table theme.
+ * CSS custom properties only, no build step, no image assets:
+ * wood/stone backdrop, candlelit warm tones, gold accents for royals,
+ * felt-textured play area — all via gradients.
+ */
+
+/* ------------------------------------------------------------------ */
+/* Theme tokens                                                        */
+/* ------------------------------------------------------------------ */
+:root {
+  /* Wood / stone backdrop */
+  --wood-deep: #150e08;
+  --wood-dark: #241811;
+  --wood-mid: #33241a;
+  --wood-plank: #0d0906;
+  --stone: #2e2c2a;
+
+  /* Felt play area */
+  --felt: #1e3a2f;
+  --felt-light: #2c5243;
+  --felt-edge: #0d1f19;
+
+  /* Candlelight */
+  --candle: #ffcf7a;
+  --candle-glow: rgba(255, 190, 90, 0.28);
+  --candle-faint: rgba(255, 180, 80, 0.10);
+
+  /* Gold (royals, accents) */
+  --gold: #c9a227;
+  --gold-bright: #e8c85a;
+  --gold-dim: #7a6420;
+
+  /* Cards & text */
+  --card-face: #f2e9d4;
+  --card-face-shade: #d9cbaa;
+  --ink: #2a2118;
+  --suit-red: #b33636;
+  --suit-black: #33291f;
+  --parchment: #e8dcc0;
+  --text: #e8dcc0;
+  --text-dim: #a89880;
+
+  /* States */
+  --ok: #7fae62;
+  --warn: #d08b2c;
+  --danger: #b3452f;
+  --deferred: #9a86c9;
+
+  --serif: Georgia, "Palatino Linotype", "Book Antiqua", serif;
+}
+
+/* ------------------------------------------------------------------ */
+/* Base                                                                */
+/* ------------------------------------------------------------------ */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--serif);
+  color: var(--text);
+  /* Dark wood planks + candle glow, no image assets */
+  background:
+    radial-gradient(ellipse at 18% 8%, var(--candle-faint), transparent 45%),
+    radial-gradient(ellipse at 82% 92%, rgba(255, 150, 50, 0.07), transparent 40%),
+    repeating-linear-gradient(
+      90deg,
+      var(--wood-plank) 0 2px,
+      transparent 2px 110px
+    ),
+    linear-gradient(180deg, var(--wood-dark), var(--wood-deep));
+  background-attachment: fixed;
+}
+
+h1, h2, h3 {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+button {
+  font-family: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 2px;
+}
+
+.screen {
+  padding: 18px;
+}
+
+.screen--center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 80vh;
+  text-align: center;
+}
+
+/* ------------------------------------------------------------------ */
+/* Shared components                                                   */
+/* ------------------------------------------------------------------ */
+.btn {
+  padding: 9px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--gold-dim);
+  background: linear-gradient(180deg, var(--wood-mid), var(--wood-dark));
+  color: var(--parchment);
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.1s ease;
+}
+
+.btn:hover:not(:disabled) {
+  box-shadow: 0 0 10px var(--candle-glow);
+  transform: translateY(-1px);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  border-color: var(--gold);
+  background: linear-gradient(180deg, #4a3526, #2b1d12);
+  color: var(--gold-bright);
+}
+
+.btn--ghost {
+  border-color: transparent;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text-dim);
+}
+
+.panel {
+  background: linear-gradient(180deg, rgba(51, 36, 26, 0.92), rgba(26, 17, 10, 0.95));
+  border: 1px solid var(--gold-dim);
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  padding: 20px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  border: 1px solid var(--gold-dim);
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.badge--shield {
+  border-color: var(--candle);
+  color: var(--candle);
+}
+
+.badge--immune {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.badge--jester {
+  border-color: var(--deferred);
+  color: var(--deferred);
+}
+
+.note {
+  color: var(--text-dim);
+}
+
+/* ------------------------------------------------------------------ */
+/* Connection banner                                                   */
+/* ------------------------------------------------------------------ */
+.banner {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 10px;
+  background: linear-gradient(180deg, #4d1d12, #35140c);
+  border-bottom: 1px solid var(--danger);
+  color: var(--parchment);
+}
+
+/* ------------------------------------------------------------------ */
+/* Lobby                                                               */
+/* ------------------------------------------------------------------ */
+.game-title {
+  margin: 30px 0 4px;
+  text-align: center;
+  font-size: 3rem;
+  color: var(--gold-bright);
+  text-shadow: 0 0 18px var(--candle-glow), 0 2px 2px #000;
+}
+
+.tagline {
+  margin: 0 0 26px;
+  text-align: center;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.lobby-panels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  justify-content: center;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.lobby-panels .panel {
+  flex: 1 1 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.panel h2 {
+  margin: 0 0 6px;
+  color: var(--gold);
+}
+
+.panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.9rem;
+  color: var(--text-dim);
+}
+
+.panel input,
+.panel select {
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--gold-dim);
+  background: rgba(0, 0, 0, 0.45);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 1rem;
+}
+
+.waiting {
+  max-width: 480px;
+  margin: 26px auto 0;
+  text-align: center;
+}
+
+.session-id {
+  font-size: 1.4rem;
+  letter-spacing: 0.2em;
+  color: var(--gold-bright);
+  user-select: all;
+}
+
+.waiting-players {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  color: var(--parchment);
+}
+
+.waiting-players li {
+  padding: 4px 0;
+  border-bottom: 1px dashed rgba(122, 100, 32, 0.4);
+}
+
+/* ------------------------------------------------------------------ */
+/* Game table layout                                                   */
+/* ------------------------------------------------------------------ */
+#table {
+  display: grid;
+  width: min(1440px, 97vw);
+  margin: 0 auto;
+  gap: 14px;
+  grid-template-columns: 230px 1fr 250px;
+  grid-template-rows: auto auto 1fr auto auto;
+  grid-template-areas:
+    "castle    castle    castle"
+    "opp-left  enemy     opp-right"
+    "opp-left  play      opp-right"
+    "hand      hand      hand"
+    "log       actions   actions";
+}
+
+#castle-strip { grid-area: castle; }
+#opp-left     { grid-area: opp-left; }
+#enemy-area   { grid-area: enemy; }
+#opp-right    { grid-area: opp-right; }
+#play-area    { grid-area: play; }
+#hand         { grid-area: hand; }
+#log          { grid-area: log; }
+#action-bar   { grid-area: actions; }
+
+#leave-btn {
+  position: fixed;
+  top: 12px;
+  right: 14px;
+  z-index: 20;
+}
+
+/* Castle progress strip: 12 slots */
+#castle-strip {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--wood-mid);
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.castle-slot {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid #4a3a26;
+}
+
+.slot--defeated {
+  background: #3a2a1a;
+  box-shadow: inset 0 0 6px #000;
+  opacity: 0.7;
+}
+
+.slot--current {
+  background: var(--gold-dim);
+  border-color: var(--gold);
+  box-shadow: 0 0 8px rgba(201, 162, 39, 0.5);
+}
+
+.slot--upcoming {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Enemy area */
+#enemy-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-badges {
+  display: flex;
+  gap: 8px;
+}
+
+/* Ornate royal enemy card */
+.enemy-card {
+  width: 250px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: var(--parchment);
+  background: linear-gradient(165deg, #2b1f14, #17100a);
+  border: 2px solid var(--gold);
+  box-shadow:
+    0 0 0 1px #000,
+    0 0 18px rgba(201, 162, 39, 0.25),
+    0 10px 24px rgba(0, 0, 0, 0.6);
+}
+
+.enemy-card__rank {
+  font-size: 2.6rem;
+  line-height: 1;
+  color: var(--gold-bright);
+}
+
+.enemy-card__suit {
+  font-size: 1.6rem;
+  line-height: 1.2;
+}
+
+.enemy-card__name {
+  font-size: 1.05rem;
+  margin: 4px 0 8px;
+}
+
+.enemy-card--red .enemy-card__suit { color: #d46a6a; }
+.enemy-card--black .enemy-card__suit { color: var(--parchment); }
+
+/* Bars */
+.bar {
+  width: 100%;
+  height: 12px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid #000;
+  overflow: hidden;
+  margin-top: 5px;
+}
+
+.bar__fill {
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.3s ease;
+}
+
+.bar--hp .bar__fill {
+  background: linear-gradient(90deg, #7a2020, #c04836);
+}
+
+.bar--attack .bar__fill {
+  background: linear-gradient(90deg, #6b4423, var(--warn));
+}
+
+/* Opponents */
+.opp-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.opp-panel {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--wood-mid);
+  background: rgba(0, 0, 0, 0.35);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.opp-panel--active {
+  border-color: var(--gold);
+  box-shadow: 0 0 12px var(--candle-glow);
+}
+
+.opp-panel__name {
+  color: var(--parchment);
+  font-size: 1.05rem;
+}
+
+.opp-panel__hand {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.opp-panel__turn {
+  margin-top: 4px;
+  color: var(--gold-bright);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+/* Felt play area */
+#play-area {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--felt-edge);
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.55);
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(255, 207, 122, 0.08), transparent 60%),
+    repeating-linear-gradient(45deg, rgba(0, 0, 0, 0.06) 0 2px, transparent 2px 4px),
+    radial-gradient(ellipse at center, var(--felt-light), var(--felt) 70%);
+}
+
+#cards-against-enemy {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 34px;
+}
+
+.played-chip {
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: var(--parchment);
+  border: 1px solid rgba(122, 100, 32, 0.6);
+  background: rgba(0, 0, 0, 0.4);
+}
+
+/* Preview panel */
+#preview-panel {
+  margin-top: auto;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(122, 100, 32, 0.5);
+  background: rgba(0, 0, 0, 0.38);
+}
+
+#preview-panel h3 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+  color: var(--gold);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.pv-note {
+  margin: 2px 0;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.pv-note--muted {
+  font-style: normal;
+  opacity: 0.8;
+}
+
+.pv-damage {
+  margin: 4px 0;
+  font-size: 1.15rem;
+}
+
+.pv-damage strong {
+  color: var(--gold-bright);
+  font-size: 1.4rem;
+}
+
+.pv-times2 {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: var(--gold-bright);
+  border: 1px solid var(--gold);
+}
+
+.pv-line {
+  margin: 3px 0;
+  font-size: 0.92rem;
+}
+
+.pv--fires { color: var(--ok); }
+.pv--blocked { color: var(--warn); }
+.pv--deferred { color: var(--deferred); }
+
+.pv-yield {
+  color: var(--text-dim);
+}
+
+/* ------------------------------------------------------------------ */
+/* Cards (hand)                                                        */
+/* ------------------------------------------------------------------ */
+#hand {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  min-height: 170px;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid var(--wood-mid);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.25), rgba(0, 0, 0, 0.45));
+}
+
+.card {
+  position: relative;
+  border-radius: 10px;
+  border: 1px solid #6b5a3e;
+  background: linear-gradient(160deg, var(--card-face), var(--card-face-shade));
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45);
+  color: var(--ink);
+  font-family: var(--serif);
+}
+
+.hand-card {
+  width: 112px;
+  min-height: 156px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.hand-card:hover:not(:disabled) {
+  transform: translateY(-6px);
+}
+
+.card--selected {
+  transform: translateY(-16px);
+  outline: 2px solid var(--gold-bright);
+  box-shadow: 0 0 14px var(--candle-glow), 0 6px 12px rgba(0, 0, 0, 0.5);
+}
+
+.card--idle {
+  cursor: default;
+  filter: grayscale(0.35);
+  opacity: 0.85;
+}
+
+.card__index {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  font-size: 0.68rem;
+  color: var(--text-dim);
+}
+
+.card__rank {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.card__suit {
+  font-size: 2rem;
+  line-height: 1.15;
+}
+
+.card__name {
+  margin-top: auto;
+  font-size: 0.72rem;
+  text-align: center;
+  color: var(--ink);
+}
+
+.card__value {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.card--red .card__suit,
+.card--red .card__rank {
+  color: var(--suit-red);
+}
+
+.card--black .card__suit,
+.card--black .card__rank {
+  color: var(--suit-black);
+}
+
+.card--jester {
+  background: linear-gradient(160deg, #3a3020, #241c10);
+  color: var(--parchment);
+}
+
+.card--jester .card__suit {
+  color: var(--gold);
+}
+
+.card--jester .card__name {
+  color: var(--parchment);
+}
+
+/* ------------------------------------------------------------------ */
+/* Turn log + action bar                                               */
+/* ------------------------------------------------------------------ */
+.log {
+  list-style: none;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--wood-mid);
+  background: rgba(0, 0, 0, 0.35);
+  font-size: 0.88rem;
+  color: var(--parchment);
+  max-height: 130px;
+  overflow-y: auto;
+}
+
+.log-entry {
+  padding: 2px 0;
+  border-bottom: 1px dashed rgba(122, 100, 32, 0.35);
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.log-entry__turn {
+  flex: none;
+  font-size: 0.75rem;
+  color: var(--gold);
+  letter-spacing: 0.06em;
+}
+
+.log-entry__text {
+  min-width: 0;
+}
+
+.log-entry:last-child {
+  border-bottom: none;
+}
+
+#action-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--wood-mid);
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.action-hint {
+  margin: 0;
+  color: var(--text);
+  font-style: italic;
+}
+
+/* ------------------------------------------------------------------ */
+/* Game over                                                           */
+/* ------------------------------------------------------------------ */
+#gameover-title {
+  font-size: 3rem;
+  margin: 0 0 8px;
+  text-shadow: 0 0 18px var(--candle-glow), 0 2px 2px #000;
+}
+
+#gameover-detail {
+  color: var(--text-dim);
+  margin: 0 0 22px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Jester modal                                                        */
+/* ------------------------------------------------------------------ */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.modal {
+  max-width: 420px;
+  width: 90%;
+  text-align: center;
+}
+
+.jester-players {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Animations (B4 polish) — CSP-safe: keyframes only, no inline styles */
+/* ------------------------------------------------------------------ */
+
+/* Card deal-in: plays once per hand change (ui.js signature check) */
+@keyframes deal-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.card--dealt {
+  animation: deal-in 150ms ease-out;
+}
+
+/* Played cards arrive: brief pulse of the play area (cards_played) */
+@keyframes play-flash {
+  0%, 100% { transform: scale(1); box-shadow: none; }
+  35% { transform: scale(1.02); box-shadow: 0 0 18px var(--candle-glow); }
+}
+
+#cards-against-enemy.play-flash {
+  border-radius: 8px;
+  animation: play-flash 450ms ease-out;
+}
+
+/* Enemy defeated: shake then fade (holds until the next state arrives) */
+@keyframes enemy-defeated {
+  0% { transform: translateX(0); opacity: 1; }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(5px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(2px); opacity: 0.6; }
+  100% { transform: translateX(0); opacity: 0.35; }
+}
+
+.enemy-card--defeated {
+  animation: enemy-defeated 600ms ease-in forwards;
+}
+
+/* New enemy takes the gate: one-shot glow pulse */
+@keyframes enemy-new {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px #000,
+      0 0 18px rgba(201, 162, 39, 0.25),
+      0 10px 24px rgba(0, 0, 0, 0.6);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px #000,
+      0 0 30px rgba(232, 200, 90, 0.7),
+      0 10px 24px rgba(0, 0, 0, 0.6);
+  }
+}
+
+.enemy-card--new {
+  animation: enemy-new 900ms ease-out;
+}
+
+/* Damage feedback: floating "-N" pop over the enemy card */
+#enemy-area {
+  position: relative;
+}
+
+@keyframes damage-pop {
+  0% { opacity: 0; transform: translate(-50%, 0) scale(0.7); }
+  20% { opacity: 1; transform: translate(-50%, -8px) scale(1.15); }
+  100% { opacity: 0; transform: translate(-50%, -46px) scale(1); }
+}
+
+.enemy-hit-pop {
+  position: absolute;
+  top: 30%;
+  left: 50%;
+  z-index: 5;
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--danger);
+  text-shadow: 0 2px 4px #000, 0 0 12px rgba(179, 69, 47, 0.8);
+  pointer-events: none;
+  animation: damage-pop 800ms ease-out forwards;
+}
+
+/* Turn transition: your action bar glows while it is your turn.
+   (Static node — the pulse restarts only when the class flips.) */
+@keyframes turn-glow {
+  0%, 100% { box-shadow: 0 0 8px var(--candle-glow); }
+  50% { box-shadow: 0 0 20px var(--candle-glow); }
+}
+
+#action-bar.action-bar--my-turn {
+  border-color: var(--gold);
+  animation: turn-glow 1.8s ease-in-out infinite;
+}
+
+/* Active opponent: glow (existing) + gold underline. Static styles, no
+   animation — opponent panels are rebuilt on every render and an
+   animation here would visibly restart on each selection change. */
+.opp-panel--active .opp-panel__name {
+  text-decoration: underline;
+  text-decoration-color: var(--gold);
+  text-underline-offset: 4px;
+}
+
+/* Game over flourish */
+@keyframes screen-fade {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+#gameover.gameover--win,
+#gameover.gameover--loss {
+  animation: screen-fade 600ms ease-out;
+}
+
+@keyframes gold-shimmer {
+  0%, 100% { text-shadow: 0 0 18px var(--candle-glow), 0 2px 2px #000; }
+  50% { text-shadow: 0 0 34px rgba(232, 200, 90, 0.9), 0 2px 2px #000; }
+}
+
+#gameover.gameover--win #gameover-title {
+  color: var(--gold-bright);
+  animation: gold-shimmer 2.4s ease-in-out infinite;
+}
+
+/* Defeat: the screen sinks into darkness (overlay behind the content) */
+#gameover.gameover--loss::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.8));
+  animation: dark-fade 1.2s ease-out forwards;
+}
+
+@keyframes dark-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Reduced motion: collapse every animation/transition to effectively
+   nothing (fill-mode effects still land on their final keyframe). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
