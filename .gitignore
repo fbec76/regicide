@@ -211,3 +211,7 @@ __marimo__/
 
 # Playwright MCP artifacts
 .playwright-mcp/
+
+# ML artifacts
+ml/runs/
+ml/sweeps/
