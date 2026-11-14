@@ -132,6 +132,15 @@ class RegicideWebSocketServer:
             'players_needed': num_players
         })
 
+        # Broadcast the creator's own join so their client's waiting-room
+        # list populates (same message shape as handle_join_game).
+        await self.broadcast_to_session(session_id, {
+            'type': 'player_joined',
+            'player_name': player_name,
+            'players_count': len(self.waiting_rooms[session_id]['players']),
+            'players_needed': self.waiting_rooms[session_id]['max_players']
+        })
+
         self.logger.info(f"Game {session_id} created by {client_id}")
 
     async def handle_join_game(self, client_id: str, data: dict):

@@ -34,6 +34,10 @@ JESTER_CHOICE_TIMEOUT_SECONDS = 60.0
 INVALID_PLAY_REASON = (
     "Not a valid play: play a single card, a same-value combo of 2-4 cards "
     "summing to at most 10, or an animal pair")
+# Full castle size at reset (J/Q/K × 4 suits). One enemy is drawn into play
+# at reset, so castle_defeated == CASTLE_TOTAL - castle_remaining
+# - (1 if an enemy is in play).
+CASTLE_TOTAL = 12
 
 
 class WebSocketCLIBridge:
@@ -244,6 +248,24 @@ class WebSocketCLIBridge:
                 # Immunity suppresses the power; the damage still applies.
                 powers[suit] = "blocked"
 
+        # Post-play attack (playtesting fix): the enemy's effective attack
+        # immediately AFTER this play resolves. A firing spade lowers it
+        # right away (floored at 0); a pending spade (spade vs spades enemy)
+        # lands its shield only once a Jester negates the immunity — its
+        # value is reported via pending_shield_value so the client can note
+        # the deferred change. Blocked spades are structurally impossible
+        # (spade immunity implies a spades enemy, which routes to pending),
+        # so any spade not firing here is pending.
+        firing_spade_values = [
+            c.value for c in cards
+            if c.suit == "spades" and powers.get("spades") == "fires"]
+        pending_spade_values = [
+            c.value for c in cards
+            if c.suit == "spades" and powers.get("spades") == "pending"]
+        post_play_attack = max(
+            enemy.effective_attack() - sum(firing_spade_values), 0)
+        pending_shield_value = sum(pending_spade_values)
+
         return {
             "type": "preview",
             "valid": True,
@@ -252,6 +274,8 @@ class WebSocketCLIBridge:
             "powers": powers,
             "defeats_enemy": enemy.current_damage + damage >= enemy.max_health,
             "yield_attack": enemy.effective_attack(),
+            "post_play_attack": post_play_attack,
+            "pending_shield_value": pending_shield_value,
         }
 
     def _guard_action(self, client_id: str, expected_phase: str):
@@ -409,7 +433,27 @@ class WebSocketCLIBridge:
             "player": active.name,
         }
         if self.engine.phase == "defense":
-            message["needed"] = game_state.current_enemy.effective_attack()
+            needed = game_state.current_enemy.effective_attack()
+            hand_sum = sum(c.value for c in active.hand)
+            if hand_sum < needed:
+                # Uncoverable defense (playtesting fix): the client gates
+                # the defend button on hand sum, so an uncoverable player
+                # never acts and the game hangs before the engine's
+                # defense_validation could terminate the loss. Force the
+                # empty defend — _execute_defense runs defense_validation
+                # FIRST, which returns done=True with result
+                # player_defeated; _process_step_result then broadcasts
+                # game_ended. No action_required is sent in this case.
+                self.logger.warning(
+                    f"{active.name} cannot cover the attack of {needed} "
+                    f"(hand sums to {hand_sum}); terminating as "
+                    f"uncoverable-defense loss")
+                _, _, done, info = self.engine.step(
+                    {"type": "defend", "cards": []})
+                await self._process_step_result(
+                    info, done, "defend", [], active)
+                return
+            message["needed"] = needed
         else:
             message["can_yield"] = game_state.can_yield(active)
         await self.send_to_client(client_id, message)
@@ -438,6 +482,10 @@ class WebSocketCLIBridge:
             "immunity": game_state.enemy_immunity,
             "face_jester_played": game_state.face_jester_played,
             "castle_remaining": len(game_state.castle_deck.cards),
+            "castle_defeated": (
+                CASTLE_TOTAL - len(game_state.castle_deck.cards)
+                - (1 if game_state.current_enemy is not None else 0)),
+            "castle_total": CASTLE_TOTAL,
             "tavern_count": len(game_state.tavern_deck.cards),
             "play_area": [c.display_name for c in game_state.cards_against_enemy],
             "you": you,

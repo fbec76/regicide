@@ -349,8 +349,10 @@ async def _lobby_flows():
             await joiner.recv_until("game_started")
 
         joined = host.of_type("player_joined")
+        # Creator's own join broadcast (lobby fix) precedes the joiners'.
         assert [(m["player_name"], m["players_count"], m["players_needed"])
-                for m in joined] == [("Second", 2, 3), ("Third", 3, 3)]
+                for m in joined] == [("Host", 1, 3), ("Second", 2, 3),
+                                     ("Third", 3, 3)]
         for client in [host, *joiners]:
             assert client.state["you"]["hand_size"] == 6  # 3-player hand size
             assert len(client.state["you"]["hand"]) == 6
