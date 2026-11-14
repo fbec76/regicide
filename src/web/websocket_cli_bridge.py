@@ -18,17 +18,22 @@ parsing, so any action from a stuck player terminates the loss; a pre-empt
 step would duplicate engine logic in the bridge for no gain.
 """
 import asyncio
-from typing import Awaitable, Callable, Dict, Optional
+from typing import Awaitable, Callable, Dict, List, Optional
 
+from game.card import Card
 from game.engine import Engine
 from game.player import Player
-from game.rules import can_play_jester
+from game.rules import can_play_jester, is_enemy_immune, is_valid_play, total_attack
 from __init__ import get_logger
 
 # Player count → initial hand size (mirrors main.py).
 HAND_SIZE_TABLE = {2: 7, 3: 6, 4: 5}
 # Generous window for the acting player to answer a Jester choice.
 JESTER_CHOICE_TIMEOUT_SECONDS = 60.0
+# Shown when a preview selection is not a legal play (mirrors rules.is_valid_play).
+INVALID_PLAY_REASON = (
+    "Not a valid play: play a single card, a same-value combo of 2-4 cards "
+    "summing to at most 10, or an animal pair")
 
 
 class WebSocketCLIBridge:
@@ -128,6 +133,9 @@ class WebSocketCLIBridge:
             return await self._handle_play(client_id, data)
         if msg_type == "defend":
             return await self._handle_defend(client_id, data)
+        if msg_type == "preview":
+            await self._handle_preview(client_id, data)
+            return None
         if msg_type == "jester_choose":
             await self._send_error(client_id, "No jester choice is currently required")
             return None
@@ -176,6 +184,75 @@ class WebSocketCLIBridge:
         _, _, done, info = self.engine.step({"type": "defend", "cards": cards})
         await self._process_step_result(info, done, "defend", cards, player)
         return info
+
+    async def _handle_preview(self, client_id: str, data: dict) -> None:
+        """Read-only play preview (D2). Same expected-client guard and index
+        schema as play, but it never steps: index resolution and the
+        computation are await-free, so no state change can interleave."""
+        error, player = self._guard_action(client_id, expected_phase="attack")
+        if error:
+            await self._send_error(client_id, error)
+            return
+        indices = data.get("card_indices")
+        error = self._validate_indices(indices, player.hand)
+        if error:
+            await self._send_error(client_id, error)
+            return
+        if not indices:
+            # An empty play IS a yield (a state change) — never previewable.
+            # The cost of yielding ships as ``yield_attack`` on every valid
+            # preview instead.
+            await self._send_error(
+                client_id,
+                "card_indices must not be empty (an empty play is a yield)")
+            return
+        cards = [player.hand[i] for i in indices]  # preserve client order
+        preview = self.compute_preview(cards)
+        await self.send_to_client(client_id, preview)
+
+    def compute_preview(self, cards: List[Card]) -> dict:
+        """Three-state preview computation (D2) — ZERO state mutation: only
+        pure rules helpers plus read-only GameState inspection are used
+        (grep-verifiable: no ``step()``, no field writes anywhere here)."""
+        game_state = self.engine.game_state
+        enemy = game_state.current_enemy
+        jester_active = game_state.face_jester_played
+
+        if not is_valid_play(cards):
+            return {"type": "preview", "valid": False,
+                    "reason": INVALID_PLAY_REASON}
+
+        damage = total_attack(cards, jester_active, enemy=enemy)
+        # Clubs doubling marker — mirrors total_attack's condition exactly
+        # (there is no "clubs power": resolve_suit_power clubs is a pass).
+        has_club = any(c.suit == "clubs" for c in cards if c.c_type != "jester")
+        double_damage = has_club and not (
+            enemy.suit == "clubs" and not jester_active)
+
+        powers = {}
+        for suit in ("hearts", "diamonds", "spades"):
+            card_of_suit = next((c for c in cards if c.suit == suit), None)
+            if card_of_suit is None:
+                continue  # suit not in the selection → no power entry
+            if not is_enemy_immune(enemy, card_of_suit, jester_active):
+                powers[suit] = "fires"
+            elif suit == "spades" and enemy.suit == "spades":
+                # Deferred to pending_spades: the shield lands once a Jester
+                # negates immunity (engine _execute_play collection gate).
+                powers[suit] = "pending"
+            else:
+                # Immunity suppresses the power; the damage still applies.
+                powers[suit] = "blocked"
+
+        return {
+            "type": "preview",
+            "valid": True,
+            "damage": damage,
+            "double_damage": double_damage,
+            "powers": powers,
+            "defeats_enemy": enemy.current_damage + damage >= enemy.max_health,
+            "yield_attack": enemy.effective_attack(),
+        }
 
     def _guard_action(self, client_id: str, expected_phase: str):
         """Expected-actor guard: registered client, right phase, right turn.
