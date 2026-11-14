@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import websockets
 import json
 import uuid
@@ -333,8 +334,13 @@ class RegicideWebSocketServer:
                 'message': 'Internal server error'
             })
 
-    async def client_handler(self, websocket, path):
-        """Handle individual client connections"""
+    async def client_handler(self, websocket, path=None):
+        """Handle individual client connections.
+
+        ``path`` defaults to None because the handler signature must fit both
+        websockets versions: 12.x legacy serve passes (connection, path), the
+        >= 13 asyncio implementation passes only the connection.
+        """
         client_id = str(uuid.uuid4())
         await self.register_client(websocket, client_id)
 
@@ -392,11 +398,18 @@ class RegicideWebSocketServer:
         return start_server
 
 if __name__ == "__main__":
-    server = RegicideWebSocketServer()
-    start_server = server.start_server()
+    async def _serve_forever():
+        ws_server = RegicideWebSocketServer().start_server()
+        if inspect.isawaitable(ws_server):
+            ws_server = await ws_server
+        try:
+            await asyncio.get_running_loop().create_future()
+        finally:
+            ws_server.close()
+            await ws_server.wait_closed()
 
-    print(f"Regicide WebSocket server starting on ws://{server.host}:{server.port}")
-
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(start_server)
-    loop.run_forever()
+    print(f"Regicide WebSocket server starting on ws://localhost:8765")
+    try:
+        asyncio.run(_serve_forever())
+    except KeyboardInterrupt:
+        pass

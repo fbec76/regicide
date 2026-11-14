@@ -7,6 +7,8 @@ to connect and play your CLI-based Regicide game.
 """
 
 import asyncio
+import inspect
+import signal
 import sys
 import os
 import argparse
@@ -17,6 +19,27 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from web.app import RegicideWebSocketServer
 from web.static_server import HTTP_PORT_OFFSET
 from __init__ import get_logger
+
+
+async def async_main(host='localhost', port=8765):
+    """Bind the WebSocket server (plus static sidecar) and serve forever.
+
+    Works with both websockets versions the launcher may run under:
+    - 12.x legacy serve: called inside a running loop, returns a Serve
+      awaitable that binds to the current loop when awaited.
+    - >= 13 asyncio implementation: requires a running loop at call time and
+      returns the Server synchronously (still awaitable for compatibility).
+    ``inspect.isawaitable`` covers both return shapes.
+    """
+    server = RegicideWebSocketServer(host, port)
+    ws_server = server.start_server()  # also starts the static sidecar thread
+    if inspect.isawaitable(ws_server):
+        ws_server = await ws_server
+    try:
+        await asyncio.get_running_loop().create_future()  # serve forever
+    finally:
+        ws_server.close()
+        await ws_server.wait_closed()
 
 
 def main():
@@ -31,10 +54,6 @@ def main():
     logger = get_logger("regicide.server")
     logger.setLevel(args.log_level.upper())
 
-    # Create and start server
-    server = RegicideWebSocketServer(host=args.host, port=args.port)
-    start_server = server.start_server()
-
     print("🎴 Regicide WebSocket Server")
     print("=" * 40)
     print(f"Server URL: ws://{args.host}:{args.port}")
@@ -43,10 +62,12 @@ def main():
     print("\nServer starting... Press Ctrl+C to stop")
     print("=" * 40)
 
+    # Route SIGTERM through the same clean-exit path as Ctrl+C; the static
+    # sidecar is a daemon thread and dies with the process.
+    signal.signal(signal.SIGTERM, signal.default_int_handler)
+
     try:
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(start_server)
-        loop.run_forever()
+        asyncio.run(async_main(args.host, args.port))
     except KeyboardInterrupt:
         print("\n\n🛑 Server shutting down...")
         logger.info("Server shutdown requested")
