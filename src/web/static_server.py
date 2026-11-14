@@ -13,7 +13,9 @@ Security hardening (review amendment sec#4):
 - directory listings disabled (``403 Forbidden`` — chosen over an empty
   page so a misconfigured path is loudly visible in the browser),
 - fail-fast on bind errors such as EADDRINUSE (clear log + re-raise),
-- strict CSP header on EVERY response (including errors).
+- strict CSP header on EVERY response (including errors),
+- ``Cache-Control: no-cache`` on every response so the browser never runs
+  stale JS/CSS after a server-side client update.
 
 CSP note (Phase B): ``style-src 'self'`` forbids inline ``style=""``
 attributes and ``<style>`` blocks. If the browser client ends up needing
@@ -43,7 +45,8 @@ CSP_TEMPLATE = ("default-src 'self'; "
 
 
 class StaticFileHandler(SimpleHTTPRequestHandler):
-    """Serves ONLY ``STATIC_DIR`` with a strict CSP header on every response.
+    """Serves ONLY ``STATIC_DIR`` with a strict CSP header and
+    ``Cache-Control: no-cache`` on every response (see ``end_headers``).
 
     ``csp_header`` and ``logger`` are class attributes set by
     ``start_static_server`` before the server starts (one sidecar per
@@ -75,6 +78,12 @@ class StaticFileHandler(SimpleHTTPRequestHandler):
 
     def end_headers(self):
         self.send_header("Content-Security-Policy", self.csp_header)
+        # ``no-cache`` (not ``no-store``) on ALL responses — simplest correct
+        # choice: the browser revalidates every asset (HTML, JS/MJS, CSS,
+        # favicon) on each request, so a server-side client fix is picked up
+        # immediately instead of stale JS running against a fixed server.
+        # Revalidation is cheap: unchanged files get a fast 304.
+        self.send_header("Cache-Control", "no-cache")
         super().end_headers()
 
     def log_message(self, format, *args):  # noqa: A002 (stdlib signature)

@@ -84,6 +84,15 @@ export function handCannotCover(state) {
 }
 
 export function defenseNeeded(state) {
+  // Prefer the shared-state field: it arrives with every `state` message, so
+  // a render between `state` and `action_required` (or a lost/stale action
+  // message) can never fall back to "defense against 0". The action-message
+  // fallback keeps compatibility with older servers that do not ship
+  // defense_needed.
+  if (state.game && state.game.phase === 'defense'
+    && typeof state.game.defense_needed === 'number') {
+    return state.game.defense_needed;
+  }
   return state.action && state.action.phase === 'defense'
     ? state.action.needed
     : null;

@@ -455,6 +455,24 @@ class WebSocketCLIBridge:
                 return
             message["needed"] = needed
         else:
+            if game_state.player_is_stuck(active):
+                # Stuck-player loss (official rules: a player who can
+                # neither play a card nor yield loses the game for
+                # everyone). The engine's stuck check (_begin_turn) only
+                # runs when an ACTION arrives — but a stuck player's
+                # client has no enabled action (empty hand, yield
+                # forbidden), so no action would ever arrive and the loss
+                # would never trigger. Pre-empt it exactly as any next
+                # step would: step() runs _begin_turn before action
+                # parsing, so the step content is irrelevant.
+                self.logger.warning(
+                    f"{active.name} is stuck (no cards to play, cannot "
+                    f"yield); terminating as stuck-player loss")
+                _, _, done, info = self.engine.step(
+                    {"type": "play", "cards": []})
+                await self._process_step_result(
+                    info, done, "play", [], active)
+                return
             message["can_yield"] = game_state.can_yield(active)
         await self.send_to_client(client_id, message)
 
@@ -491,6 +509,15 @@ class WebSocketCLIBridge:
             "you": you,
             "opponents": opponents,
         }
+        # Fresh defense requirement inside the shared snapshot: the client
+        # must never depend on action-message ordering for the needed value
+        # (a render between `state` and `action_required` would otherwise
+        # fall back to "defense against 0"). Absent outside the defense
+        # phase — the enemy's standing effective_attack is already in
+        # state.enemy and is NOT the defense requirement.
+        if (self.engine.phase == "defense"
+                and game_state.current_enemy is not None):
+            state["defense_needed"] = game_state.current_enemy.effective_attack()
         if active is self.client_by_id.get(for_client_id):
             state["active_player_client_id"] = for_client_id
         return state
