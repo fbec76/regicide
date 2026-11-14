@@ -192,6 +192,11 @@ select:focus-visible {
   color: var(--parchment);
 }
 
+/* Same reason as .modal-backdrop[hidden] — author display beats UA [hidden]. */
+.banner[hidden] {
+  display: none;
+}
+
 /* ------------------------------------------------------------------ */
 /* Lobby                                                               */
 /* ------------------------------------------------------------------ */
@@ -731,6 +736,12 @@ select:focus-visible {
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.65);
+}
+
+/* Author display: flex beats the UA stylesheet's [hidden] { display: none },
+   so re-hide explicitly (0,2,0 > 0,1,0 specificity). */
+.modal-backdrop[hidden] {
+  display: none;
 }
 
 .modal {
