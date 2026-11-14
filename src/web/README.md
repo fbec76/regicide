@@ -24,10 +24,12 @@ The WebSocket server structure maintains your existing CLI-based game logic whil
 src/web/
 ├── __init__.py                 # Package initialization
 ├── app.py                      # Main WebSocket server
-├── server.py                   # Server launcher script
-├── websocket_cli_bridge.py     # Bridges WebSocket ↔ CLI game engine
+├── server.py                   # Server launcher script (WS + static sidecar)
+├── static_server.py            # Static HTTP sidecar serving the browser client
+├── websocket_cli_bridge.py     # Bridges WebSocket ↔ game engine (Engine.step)
 ├── cli_adapter.py              # Adapts CLI functions for WebSocket
-└── client_example.py           # Example client for testing
+├── client_example.py           # Example client for testing
+└── static/                     # Browser client (see static/README.md)
 ```
 
 ## Key Components
@@ -62,12 +64,17 @@ pip install websockets~=12.0
 
 2. Start the server:
 ```bash
-# From src/web directory
-python server.py
+# From the repository root (also serves the browser client via the
+# static sidecar: WS on 8765, HTTP on 8766)
+python src/web/server.py
 
 # Or with custom settings
-python server.py --host 0.0.0.0 --port 8765 --log-level DEBUG
+python src/web/server.py --host 0.0.0.0 --port 8765 --log-level DEBUG
 ```
+
+Then open <http://localhost:8766/> to play in the browser, or connect a raw
+WebSocket client to `ws://localhost:8765` (see `static/README.md` for the
+full message protocol).
 
 ## How It Works
 
@@ -99,8 +106,7 @@ python server.py --host 0.0.0.0 --port 8765 --log-level DEBUG
 }
 
 {
-  "type": "player_action",
-  "action": "play_cards",
+  "type": "play",
   "card_indices": [0, 2, 4]
 }
 ```
@@ -173,10 +179,9 @@ ws.send(JSON.stringify({
 
 ## Next Steps
 
-1. **Test the basic server**: Run `python server.py` and connect with the example client
-2. **Customize messages**: Modify the CLI adapter to match your specific display needs
+1. **Test the basic server**: Run `python src/web/server.py` and connect with the example client
+2. **Play in the browser**: Open <http://localhost:8766/> — the static client is documented in `static/README.md`
 3. **Add authentication**: Implement player authentication if needed
-4. **Web UI**: Create a web interface that connects to this WebSocket server
-5. **Production deployment**: Use proper WebSocket hosting (e.g., with nginx proxy)
+4. **Production deployment**: Use proper WebSocket hosting (e.g., with nginx proxy)
 
 The server maintains complete compatibility with your existing CLI game while enabling remote multiplayer functionality!
