@@ -57,6 +57,45 @@ def test_can_yield():
     gs.yields_in_a_row[players[1].name] = False
     assert gs.can_yield(players[0]) is True
 
+def test_record_turn_start_clears_flag():
+    players = [DummyPlayer('A'), DummyPlayer('B')]
+    gs = GameState(players, DummyDeck([]), DummyDeck([Card('spades', 'K', 13, 'face', 'King')]), DummyDeck([]))
+    gs.record_yield(players[0])
+    assert gs.yields_in_a_row['A'] is True
+    gs.record_turn_start(players[0])
+    assert gs.yields_in_a_row['A'] is False
+
+def test_record_yield_sets_flag():
+    players = [DummyPlayer('A'), DummyPlayer('B')]
+    gs = GameState(players, DummyDeck([]), DummyDeck([Card('spades', 'K', 13, 'face', 'King')]), DummyDeck([]))
+    assert gs.yields_in_a_row['A'] is False
+    gs.record_yield(players[0])
+    assert gs.yields_in_a_row['A'] is True
+
+def test_can_yield_chain_two_players():
+    players = [DummyPlayer('A'), DummyPlayer('B')]
+    gs = GameState(players, DummyDeck([]), DummyDeck([Card('spades', 'K', 13, 'face', 'King')]), DummyDeck([]))
+    gs.total_turns = 1  # leave the "first turn always allowed" special case
+    # A yields on their most recent turn...
+    gs.record_yield(players[0])
+    # ...so B may not yield while A's last turn was a yield.
+    assert gs.can_yield(players[1]) is False
+    # A starts a new turn without yielding -> B may yield again.
+    gs.record_turn_start(players[0])
+    assert gs.can_yield(players[1]) is True
+
+def test_can_yield_chain_three_players():
+    players = [DummyPlayer('A'), DummyPlayer('B'), DummyPlayer('C')]
+    gs = GameState(players, DummyDeck([]), DummyDeck([Card('spades', 'K', 13, 'face', 'King')]), DummyDeck([]))
+    gs.total_turns = 1
+    gs.record_yield(players[0])       # A yields on their last turn
+    gs.record_turn_start(players[1])  # B starts a turn and plays (no yield)
+    # C may yield: not ALL others (B) yielded on their most recent turn.
+    assert gs.can_yield(players[2]) is True
+    gs.record_yield(players[1])       # B also yields on their last turn
+    # Now A and B both yielded on their most recent turns -> C may not.
+    assert gs.can_yield(players[2]) is False
+
 def test_check_loss_all_dead():
     players = [DummyPlayer('A', alive=False), DummyPlayer('B', alive=False)]
     gs = GameState(players, DummyDeck([]), DummyDeck([Card('spades', 'K', 13, 'face', 'King')]), DummyDeck([]))
