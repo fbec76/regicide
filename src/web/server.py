@@ -15,6 +15,7 @@ import argparse
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from web.app import RegicideWebSocketServer
+from web.static_server import HTTP_PORT_OFFSET
 from __init__ import get_logger
 
 
@@ -37,6 +38,7 @@ def main():
     print("🎴 Regicide WebSocket Server")
     print("=" * 40)
     print(f"Server URL: ws://{args.host}:{args.port}")
+    print(f"Static client: http://{args.host}:{args.port + HTTP_PORT_OFFSET}")
     print(f"Log Level: {args.log_level}")
     print("\nServer starting... Press Ctrl+C to stop")
     print("=" * 40)

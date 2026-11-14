@@ -10,6 +10,7 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from __init__ import get_logger
+from web.static_server import start_static_server
 from web.websocket_cli_bridge import WebSocketCLIBridge
 
 # Lobby hardening (security): combined cap on waiting rooms + active games.
@@ -372,6 +373,11 @@ class RegicideWebSocketServer:
     def start_server(self):
         """Start the WebSocket server"""
         self.logger.info(f"Starting Regicide WebSocket server on {self.host}:{self.port}")
+
+        # Static file sidecar (Decision D1): daemon thread serving
+        # src/web/static/ on WS port + 1 (default 8766), same host, strict
+        # CSP. Runs only while the process lives.
+        start_static_server(self.host, self.port, self.logger)
 
         start_server = websockets.serve(
             self.client_handler,
