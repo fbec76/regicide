@@ -69,6 +69,49 @@ pre-step ``current_enemy`` identity and, if the result is
 handle_enemy_defeat before the win), declares exact_defeat iff that exact
 Card object is now the tavern top. Identity (``is``) is used, not value
 equality, so distinct same-rank cards cannot collide.
+
+Per-step telemetry (Phase 3.1)
+------------------------------
+Every step's info additionally carries READ-ONLY telemetry keys derived from
+the engine state (the engine is never mutated for telemetry):
+
+- ``phase``: the pre-step phase the action was taken in.
+- ``action_idx``: the action index passed to step() (for the R1 auto-loss
+  the executed action is the env's empty defend, not this index).
+- ``decoded_cards``: display names of the cards the decoded action plays /
+  discards (empty for yield and the R1 auto-loss).
+- ``yield_taken``: True iff this step was an attack-phase yield.
+- ``damage_dealt``: pre/post ``current_damage`` delta; on defeat the PRE-step
+  hp remaining (the engine replaces the enemy and the old object's
+  current_damage carries the overshoot — hp drops to exactly 0, so hp
+  remaining is the honest hp drop).
+- ``shield_raised``: hybrid derivation, documented for robustness — when the
+  enemy persists, the pre/post ``enemy.shield`` delta (exact, and also covers
+  the jester's retroactive pending-spade resolution, which decoded cards
+  cannot see); when the enemy is replaced by defeat, card-derived (the
+  engine scopes a firing spade's shield to the WHOLE play's value —
+  handle_suit_powers passes the play's total value to resolve_suit_power).
+  A spade blocked by immunity is pending, not raised.
+- ``suit_powers``: dict suit -> "fires"/"blocked"/"pending" for the suits in
+  this play, mirroring handle_suit_powers + the pre-jester pending-spade
+  collection: fires when the enemy is not immune (is_enemy_immune with the
+  pre-step face_jester_played — a jester never shares a play with other
+  cards); a blocked SPADE is "pending" (collected for retroactive jester
+  resolution); blocked hearts/diamonds are "blocked". Clubs have no suit
+  power (damage doubling only) and are omitted.
+- ``jester_event``: {"played": bool, "next_player": name of the chosen next
+  player (the post-step active player) or None}.
+- ``defense_needed`` / ``defense_discarded_sum`` / ``defense_overspend``:
+  the defense phase's pre-step effective_attack, the value-sum of the
+  discarded cards, and their difference (negative = shortfall, i.e. the R1
+  empty-defend auto-loss records 0 discarded). None on attack-phase steps.
+- ``defeat_cause``: on terminal steps only — "exact_win"/"win",
+  "uncoverable_defense" (R1 env auto-loss), "insufficient_defense"
+  (engine defense_validation loss outside the R1 path; effectively
+  unreachable through the masked env), "stuck" (engine preempts a
+  stuck turn), "truncated" (env step_limit). None on non-terminal steps.
+- ``step_count`` / ``enemies_defeated_so_far``: 1-based episode step number
+  and the enemies defeated so far this episode (env-side counters).
 """
 from __future__ import annotations
 
@@ -86,6 +129,7 @@ from gymnasium import spaces
 from game.engine import Engine
 from game.game_state import GameState
 from game.player import Player
+from game.rules import is_enemy_immune
 
 from ml.envs import obs_encoder, reward
 from ml.envs.action_mask import N_ACTIONS, build_mask, decode_action
@@ -193,6 +237,7 @@ class RegicideGymEnv(gym.Env):
         self.engine: Optional[Engine] = None
         self._prev_potential: Optional[float] = None
         self._step_count = 0
+        self._enemies_defeated = 0
 
     # ------------------------------------------------------------------ #
     # Gym API
@@ -216,6 +261,7 @@ class RegicideGymEnv(gym.Env):
                 : self.config.campaign_length - 1
             ]
         self._step_count = 0
+        self._enemies_defeated = 0
         self._prev_potential = reward.potential(game_state, self.reward_config)
         obs = self._current_obs()
         mask = self.current_mask()
@@ -246,7 +292,9 @@ class RegicideGymEnv(gym.Env):
         # R1 (step-entry guard): an unplayable defense state is auto-lost
         # directly — the (possibly all-False) defense mask is never used.
         if phase == "defense" and _defense_insufficient(game_state):
-            return self._step_engine({"type": "defend", "cards": []})
+            return self._step_engine(
+                {"type": "defend", "cards": []}, action_id, r1_auto_loss=True
+            )
 
         needed = (
             game_state.current_enemy.effective_attack() if phase == "defense" else None
@@ -266,7 +314,7 @@ class RegicideGymEnv(gym.Env):
             return self._invalid_action_response()
 
         action_dict = decode_action(action_id, active.hand, phase, needed)
-        return self._step_engine(action_dict)
+        return self._step_engine(action_dict, action_id)
 
     def action_masks(self) -> np.ndarray:
         """Mask for the CURRENT pending state (SB3 ActionMasker interface)."""
@@ -334,10 +382,11 @@ class RegicideGymEnv(gym.Env):
         logging.getLogger(__name__).warning("Invalid action selected")
         return self._current_obs(), -1.0, False, False, {"error": "Invalid action"}
 
-    def _step_engine(self, action_dict: dict):
+    def _step_engine(self, action_dict: dict, action_id: int, r1_auto_loss: bool = False):
         """Run the engine transition (stdout silenced), compute PBRS reward
-        and events, build the next obs/mask, and handle R1 chaining."""
-        prev_enemy = self.engine.game_state.current_enemy
+        and events, build the next obs/mask, handle R1 chaining, and attach
+        the per-step telemetry keys (Phase 3.1) to info."""
+        pre = _capture_pre_step(self.engine)
         with contextlib.redirect_stdout(io.StringIO()):
             _, _, done, engine_info = self.engine.step(action_dict)
 
@@ -356,10 +405,14 @@ class RegicideGymEnv(gym.Env):
                     {"type": "defend", "cards": []}
                 )
             result = engine_info.get("result")
+            r1_auto_loss = True
 
-        events = _build_events(result, prev_enemy, game_state)
+        events = _build_events(result, pre["enemy"], game_state)
 
         self._step_count += 1
+        enemy_defeated = pre["enemy"].current_damage >= pre["enemy"].max_health
+        if enemy_defeated:
+            self._enemies_defeated += 1
         truncated = self._step_count >= self.config.step_limit and not done
 
         reward_value = reward.compute_reward(
@@ -382,6 +435,22 @@ class RegicideGymEnv(gym.Env):
             "result": result,
             "campaign_length": self.config.campaign_length,
         }
+        info.update(
+            _build_telemetry(
+                pre=pre,
+                action_dict=action_dict,
+                action_id=action_id,
+                game_state=game_state,
+                result=result,
+                done=bool(done),
+                truncated=bool(truncated),
+                r1_auto_loss=r1_auto_loss,
+                events=events,
+                step_count=self._step_count,
+                enemies_defeated=self._enemies_defeated,
+                enemy_defeated=enemy_defeated,
+            )
+        )
         return obs, reward_value, bool(done), bool(truncated), info
 
 
@@ -417,3 +486,222 @@ def _build_events(
     elif result == "player_defeated":
         events["terminal"] = "loss"
     return events
+
+
+# --------------------------------------------------------------------- #
+# Per-step telemetry (Phase 3.1) — all values derived READ-ONLY from the
+# engine state; the engine is never mutated for telemetry purposes.
+# --------------------------------------------------------------------- #
+
+DEFEAT_CAUSES = (
+    "exact_win",
+    "win",
+    "uncoverable_defense",
+    "insufficient_defense",
+    "stuck",
+    "truncated",
+)
+
+
+def _capture_pre_step(engine: Engine) -> dict:
+    """Snapshot the pre-step state needed for telemetry derivation.
+
+    Captured BEFORE engine.step mutates anything: the current enemy object
+    (its damage/shield fields persist through replacement, which is what
+    makes the defeat-time derivations below robust), pre-step phase, active
+    player name, stuck flag, defense needed value, and the jester-immunity
+    gate (face_jester_played) as it stood for this play.
+    """
+    game_state = engine.game_state
+    phase = engine.phase
+    enemy = game_state.current_enemy
+    active = game_state.get_active_player()
+    return {
+        "enemy": enemy,
+        "damage": enemy.current_damage,
+        "shield": enemy.shield,
+        "face_jester": game_state.face_jester_played,
+        "phase": phase,
+        "active_name": active.name,
+        "stuck": (
+            game_state.player_is_stuck(active) if phase == "attack" else False
+        ),
+        "needed": enemy.effective_attack() if phase == "defense" else None,
+    }
+
+
+def _derive_suit_powers(cards: list, pre: dict) -> dict:
+    """Map suit -> "fires"/"blocked"/"pending" for the suits in this play.
+
+    Mirrors engine.handle_suit_powers plus the pre-jester pending-spade
+    collection (engine._execute_play): a suit power fires when the enemy is
+    not immune to the card's suit (is_enemy_immune with the PRE-step
+    face_jester_played — a jester can never share a play with other cards);
+    a blocked SPADE is collected into pending_spades for retroactive
+    resolution by a later jester ("pending"); blocked hearts/diamonds simply
+    do nothing ("blocked"). Clubs have no suit power (they only double
+    damage via rules.total_attack) and are omitted.
+    """
+    powers: dict = {}
+    for suit in ("hearts", "diamonds", "spades"):
+        suit_cards = [c for c in cards if c.suit == suit]
+        if not suit_cards:
+            continue
+        if is_enemy_immune(
+            pre["enemy"], suit_cards[0], jester_active=pre["face_jester"]
+        ):
+            powers[suit] = "pending" if suit == "spades" else "blocked"
+        else:
+            powers[suit] = "fires"
+    return powers
+
+
+def _card_derived_shield(cards: list, pre: dict) -> int:
+    """Card-derived shield value for the step where the enemy was replaced
+    by defeat (the pre/post shield delta is unavailable across the
+    replacement — the new enemy starts at shield 0).
+
+    The engine scopes the spade shield to the WHOLE play's value
+    (engine.handle_suit_powers passes the play's total value to
+    rules.resolve_suit_power, which calls enemy.apply_shield(value)), so a
+    firing spade shields the sum of ALL played card values. A spade blocked
+    by immunity is collected as pending — no shield this play.
+    """
+    spades = [c for c in cards if c.suit == "spades"]
+    if not spades:
+        return 0
+    if is_enemy_immune(
+        pre["enemy"], spades[0], jester_active=pre["face_jester"]
+    ):
+        return 0
+    return sum(c.value for c in cards)
+
+
+def _derive_shield_raised(cards: list, pre: dict, game_state: GameState) -> int:
+    """shield_raised derivation (robust hybrid, documented):
+
+    - Enemy persists (not replaced): post-minus-pre ``enemy.shield`` delta.
+      This is exact and ALSO covers the jester's retroactive pending-spade
+      resolution (engine.handle_jester_played), which the decoded cards
+      alone cannot see (a jester play contains no spades).
+    - Enemy replaced by defeat: card-derived value (_card_derived_shield) —
+      the delta is meaningless across the replacement, while a spade firing
+      in the defeating play always shields before handle_enemy_defeat.
+    """
+    if game_state.current_enemy is pre["enemy"]:
+        return pre["enemy"].shield - pre["shield"]
+    return _card_derived_shield(cards, pre)
+
+
+def _derive_damage_dealt(pre: dict, enemy_defeated: bool) -> int:
+    """Damage dealt this step.
+
+    Normal steps: pre/post ``current_damage`` delta (nothing but damage
+    ever changes current_damage). Defeat steps: the PRE-step hp remaining —
+    the engine replaces the enemy on defeat (current_damage of the old
+    object carries the overshoot), and hp drops to exactly 0, so the
+    hp remaining is the honest hp drop for the step.
+    """
+    if enemy_defeated:
+        return pre["enemy"].max_health - pre["damage"]
+    return pre["enemy"].current_damage - pre["damage"]
+
+
+def _defeat_cause(
+    result: Optional[str],
+    done: bool,
+    truncated: bool,
+    events: dict,
+    pre: dict,
+    r1_auto_loss: bool,
+) -> Optional[str]:
+    """Terminal-step defeat cause; None on non-terminal steps.
+
+    Mapping:
+    - truncated            -> "truncated" (env step_limit, not an engine done)
+    - result "win"         -> "exact_win" iff the exact-defeat deck-side
+                              identity check fired (defeated enemy card is
+                              the tavern top), else "win"
+    - attack-phase loss    -> "stuck" (engine._begin_turn preempted the turn:
+                              empty hand AND yield forbidden)
+    - R1 env auto-loss     -> "uncoverable_defense" (empty hand or Σhand <
+                              needed at defense entry — the env performed
+                              the empty-defend loss itself)
+    - any other loss       -> "insufficient_defense" (engine defense_validation
+                              loss outside the R1 path; effectively
+                              unreachable through the masked env because
+                              uncovered defense subsets are masked out —
+                              kept for direct-engine parity)
+    """
+    if truncated:
+        return "truncated"
+    if not done:
+        return None
+    if result == "win":
+        return "exact_win" if events.get("exact_defeat") else "win"
+    if pre["stuck"]:
+        return "stuck"
+    if r1_auto_loss:
+        return "uncoverable_defense"
+    return "insufficient_defense"
+
+
+def _build_telemetry(
+    pre: dict,
+    action_dict: dict,
+    action_id: int,
+    game_state: GameState,
+    result: Optional[str],
+    done: bool,
+    truncated: bool,
+    r1_auto_loss: bool,
+    events: dict,
+    step_count: int,
+    enemies_defeated: int,
+    enemy_defeated: bool,
+) -> dict:
+    """Assemble the Phase 3.1 per-step telemetry info keys (read-only)."""
+    cards = action_dict.get("cards", [])
+    decoded_cards = [c.display_name for c in cards]
+    is_yield = (
+        pre["phase"] == "attack"
+        and action_dict.get("type") == "play"
+        and not cards
+    )
+    is_jester = len(cards) == 1 and cards[0].c_type == "jester"
+
+    if pre["phase"] == "defense":
+        discarded_sum = sum(c.value for c in cards)
+        defense_needed: Optional[int] = pre["needed"]
+        defense_discarded_sum: Optional[int] = discarded_sum
+        # Negative overspend = shortfall (the R1 empty-defend auto-loss
+        # records 0 discarded against the needed value).
+        defense_overspend: Optional[int] = discarded_sum - pre["needed"]
+    else:
+        defense_needed = None
+        defense_discarded_sum = None
+        defense_overspend = None
+
+    return {
+        "phase": pre["phase"],
+        "action_idx": action_id,
+        "decoded_cards": decoded_cards,
+        "yield_taken": is_yield,
+        "damage_dealt": _derive_damage_dealt(pre, enemy_defeated),
+        "shield_raised": _derive_shield_raised(cards, pre, game_state),
+        "suit_powers": _derive_suit_powers(cards, pre),
+        "jester_event": {
+            "played": is_jester,
+            "next_player": (
+                game_state.get_active_player().name if is_jester else None
+            ),
+        },
+        "defense_needed": defense_needed,
+        "defense_discarded_sum": defense_discarded_sum,
+        "defense_overspend": defense_overspend,
+        "defeat_cause": _defeat_cause(
+            result, done, truncated, events, pre, r1_auto_loss
+        ),
+        "step_count": step_count,
+        "enemies_defeated_so_far": enemies_defeated,
+    }

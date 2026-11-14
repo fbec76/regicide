@@ -45,6 +45,7 @@ from sb3_contrib.common.wrappers import ActionMasker
 
 from ml.envs.regicide_env import EnvConfig
 from ml.trainers.common import make_env, seed_everything
+from ml.trainers.telemetry import EpisodeScalarsCallback, PerStepJSONLCallback
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,12 @@ class TrainingConfig:
     batch_size: int = 64
     eval_interval: int = 50_000
     n_eval_episodes: int = DEFAULT_EVAL_EPISODES
+    reward_config_name: str = "aggressive_shaping"
+    # Consumed by the telemetry callbacks when wired (Phase 3); config-level
+    # flag so sweeps can coordinate the setting via config fields.
+    telemetry: bool = True
     artifact_dir: str = ARTIFACT_DIR_DEFAULT
+    telemetry: bool = True  # Phase 3.2: steps.jsonl + episodes.jsonl callbacks
 
 
 class InvalidActionGuard(gym.Wrapper):
@@ -165,7 +171,11 @@ def _train_env_fn(
 ) -> Callable[[], gym.Env]:
     def _make() -> gym.Env:
         env = make_env(
-            EnvConfig(campaign_length=campaign_length, gamma=config.gamma),
+            EnvConfig(
+                campaign_length=campaign_length,
+                gamma=config.gamma,
+                reward_config_name=config.reward_config_name,
+            ),
             seed=config.seed,
             rank=rank,
         )
@@ -180,7 +190,11 @@ def _train_env_fn(
 
 def _make_eval_env(config: TrainingConfig, campaign_length: int, run_dir: Path) -> gym.Env:
     env = make_env(
-        EnvConfig(campaign_length=campaign_length, gamma=config.gamma),
+        EnvConfig(
+            campaign_length=campaign_length,
+            gamma=config.gamma,
+            reward_config_name=config.reward_config_name,
+        ),
         seed=config.seed,
         rank=config.n_envs,  # distinct traceability seed; eval resets re-seed anyway
     )
@@ -245,9 +259,14 @@ def train(config: TrainingConfig) -> dict:
         tensorboard_log=str(run_dir),
     )
 
+    callbacks = [curriculum_cb, eval_cb, checkpoint_cb]
+    if config.telemetry:
+        callbacks.append(PerStepJSONLCallback(run_dir / "steps.jsonl"))
+        callbacks.append(EpisodeScalarsCallback(run_dir / "episodes.jsonl"))
+
     model.learn(
         config.steps,
-        callback=[curriculum_cb, eval_cb, checkpoint_cb],
+        callback=callbacks,
         reset_num_timesteps=True,
     )
 
@@ -268,6 +287,8 @@ def train(config: TrainingConfig) -> dict:
         "final_model": str(final_model_path),
         "best_model": str(run_dir / "best_model.zip"),
         "checkpoints_dir": str(run_dir / "checkpoints"),
+        "steps_jsonl": str(run_dir / "steps.jsonl") if config.telemetry else None,
+        "episodes_jsonl": str(run_dir / "episodes.jsonl") if config.telemetry else None,
         "timesteps": int(model.num_timesteps),
         "invalid_action_count": invalid,
         "campaign_length_schedule": list(schedule),
