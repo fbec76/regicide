@@ -22,7 +22,7 @@ SUIT_COLORS = {
 }
 RESET_COLOR = "\033[0m"
 
-MAX_WIDTH = 75
+MAX_WIDTH = 100
 
 
 def visible_len(s):
@@ -265,6 +265,6 @@ def show_welcome():
     print(manual_center(r" |/   \__/(_______/(_______)\_______/(_______/\_______/(______/ (_______/ ", MAX_WIDTH))
     print("\033[0m")
     print(manual_center("\033[1;92mTerminal Edition\033[0m", MAX_WIDTH))
-    print("\033[1;90mhttps://www.regicidegame.com/site_files/33132/upload_files/RegicideRulesA4.pdf\033[0m")
+    print(manual_center("\033[1;90mhttps://www.regicidegame.com/site_files/33132/upload_files/RegicideRulesA4.pdf\033[0m", MAX_WIDTH))
     print()
     print()
