@@ -604,6 +604,49 @@ def test_jester_chooses_next_player(engine):
     assert game_state.face_jester_played is True
 
 
+def test_jester_custom_next_player_chooser_used():
+    logger = DummyLogger()
+    received = []
+
+    def chooser(players):
+        received.append(list(players))
+        return players[1]
+
+    engine = Engine(logger, lambda name=None: logger, next_player_chooser=chooser)
+    players = [Player("A", 8), Player("B", 8)]
+    engine.reset(players)
+    game_state = engine.game_state
+    jester = make_card('joker', 'Jester', 0, 'jester')
+    players[0].hand.append(jester)
+    with patch("game.engine.show_jester_played"), \
+            patch("game.engine.prompt_next_player",
+                  side_effect=AssertionError("prompt_next_player must not be called when a chooser is set")):
+        obs, reward, done, info = engine.step({"type": "play", "cards": [jester]})
+    assert info == {"result": "jester"}
+    # The chooser's returned player becomes the active player.
+    assert game_state.get_active_player() is players[1]
+    assert game_state.face_jester_played is True
+    # The chooser received the full player list, exactly like prompt_next_player.
+    assert received == [players]
+
+
+def test_jester_default_prompt_path_unchanged(engine):
+    players = [Player("A", 8), Player("B", 8)]
+    engine.reset(players)
+    game_state = engine.game_state
+    jester = make_card('joker', 'Jester', 0, 'jester')
+    players[0].hand.append(jester)
+    with patch("game.engine.show_jester_played"), \
+            patch("game.engine.prompt_next_player", return_value=players[1]) as prompt_mock:
+        obs, reward, done, info = engine.step({"type": "play", "cards": [jester]})
+    assert info == {"result": "jester"}
+    # Default path: prompt_next_player drives the rotation, unchanged.
+    assert game_state.get_active_player() is players[1]
+    assert game_state.face_jester_played is True
+    assert prompt_mock.call_count == 1
+    assert prompt_mock.call_args[0][0] == players
+
+
 def test_run_win_terminal_shows_win(engine):
     # FIX-7 regression: handle_play_action returning 'game_won' must break
     # run()'s inner loop cleanly so show_win() runs, instead of falling

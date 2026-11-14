@@ -51,13 +51,14 @@ def deal_initial_hands(game_state: GameState):
 
 
 class Engine:
-    def __init__(self, logger, get_logger):
+    def __init__(self, logger, get_logger, next_player_chooser=None):
         self.last_action_result = None
         self.phase = None
         self.game_state = None
         self.done = False
         self.logger = logger
         self.get_logger = get_logger
+        self.next_player_chooser = next_player_chooser
 
     def log_data_state(self, game_state: GameState):
         for p in game_state.players:
@@ -81,7 +82,8 @@ class Engine:
                                    tavern_deck=None, players=None, game_state=game_state,
                                    acting_player=active_player)
             game_state.pending_spades.clear()
-        next_player = prompt_next_player(list(game_state.players))
+        chooser = self.next_player_chooser or prompt_next_player
+        next_player = chooser(list(game_state.players))
         self.logger.info(f"Next player after Jester: {next_player.name}")
         while game_state.get_active_player() != next_player:
             game_state.advance_turn()
