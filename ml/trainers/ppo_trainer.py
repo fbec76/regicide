@@ -210,16 +210,20 @@ def train(config: TrainingConfig) -> dict:
     eval_env = _make_eval_env(config, schedule[-1], run_dir)
 
     curriculum_cb = _CurriculumCallback(schedule, _rung_boundaries(schedule, config.steps))
+    # SB3 2.x callback frequency counts _on_step CALLS; each call steps ALL
+    # n_envs envs, so a per-env-step interval (plan: eval/checkpoint every
+    # eval_interval env timesteps) converts as interval // n_envs.
+    callback_freq = max(1, config.eval_interval // config.n_envs)
     eval_cb = MaskableEvalCallback(
         eval_env,
         n_eval_episodes=config.n_eval_episodes,
-        eval_freq=config.eval_interval,  # per-env steps (plan: eval_freq is per-env)
+        eval_freq=callback_freq,
         deterministic=True,  # M5 eval convention
         best_model_save_path=str(run_dir),
         verbose=1,
     )
     checkpoint_cb = CheckpointCallback(
-        save_freq=config.eval_interval,  # per-env steps
+        save_freq=callback_freq,
         save_path=str(run_dir / "checkpoints"),
         name_prefix="ppo_model",
         verbose=1,
