@@ -25,7 +25,6 @@ src/web/
 ├── __init__.py                 # Package initialization
 ├── app.py                      # Main WebSocket server
 ├── server.py                   # Server launcher script
-├── game_session_manager.py     # Manages multiple game sessions
 ├── websocket_cli_bridge.py     # Bridges WebSocket ↔ CLI game engine
 ├── cli_adapter.py              # Adapts CLI functions for WebSocket
 └── client_example.py           # Example client for testing
@@ -38,10 +37,10 @@ src/web/
 - Routes messages to appropriate game sessions
 - Manages client registration and cleanup
 
-### 2. Game Session Manager (`game_session_manager.py`)
-- Tracks multiple concurrent game sessions
-- Manages player joining/leaving
-- Creates Player objects for your existing game engine
+### 2. Game Sessions
+- Managed directly by `app.py` (waiting rooms, session registry)
+- One game-setup path: `websocket_cli_bridge.WebSocketCLIBridge` builds
+  `Player` objects and calls `Engine.reset`
 
 ### 3. WebSocket CLI Bridge (`websocket_cli_bridge.py`)
 - **Core component** that integrates with your existing game engine

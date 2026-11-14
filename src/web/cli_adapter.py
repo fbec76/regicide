@@ -3,6 +3,12 @@ CLI Adapter for WebSocket Integration
 
 This module adapts your existing CLI display and input functions to work
 with the WebSocket server while maintaining all game logic in the CLI.
+
+DEPRECATED: superseded by ``websocket_cli_bridge.WebSocketCLIBridge``
+(Phase A3), which owns the game-setup and action path exclusively. This
+adapter targets the pre-Phase-A protocol/GameState API, duplicates bridge
+logic wholesale, and is not imported by the server. It is kept only for
+reference; do not wire it into new code paths.
 """
 
 import asyncio
@@ -34,10 +40,10 @@ class WebSocketCLIAdapter:
             'type': 'display_state',
             'enemy': {
                 'name': enemy.display_name,
-                'health': enemy.health,
+                'health': enemy.max_health,
                 'attack': enemy.attack,
                 'damage_taken': game_state.enemy_damage,
-                'remaining_health': enemy.health - game_state.enemy_damage
+                'remaining_health': enemy.max_health - game_state.enemy_damage
             },
             'active_player': active_player.name,
             'tavern_cards_left': len(game_state.tavern_deck.cards),
@@ -90,7 +96,7 @@ class WebSocketCLIAdapter:
             'type': 'new_enemy',
             'enemy': {
                 'name': enemy.display_name,
-                'health': enemy.health,
+                'health': enemy.max_health,
                 'attack': enemy.attack
             },
             'message': f'A new enemy appears: {enemy.display_name}!'
@@ -256,10 +262,10 @@ class WebSocketCLIAdapter:
             'type': 'game_update',
             'current_enemy': {
                 'name': game_state.current_enemy.display_name,
-                'health': game_state.current_enemy.health,
+                'health': game_state.current_enemy.max_health,
                 'attack': game_state.current_enemy.attack,
                 'damage_taken': game_state.enemy_damage,
-                'remaining_health': game_state.current_enemy.health - game_state.enemy_damage
+                'remaining_health': game_state.current_enemy.max_health - game_state.enemy_damage
             },
             'active_player': game_state.get_active_player().name,
             'turn_count': game_state.total_turns,

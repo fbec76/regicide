@@ -2,7 +2,7 @@ import asyncio
 import websockets
 import json
 import uuid
-from typing import Dict
+from typing import Dict, Set
 import sys
 import os
 
@@ -11,6 +11,15 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from __init__ import get_logger
 from web.websocket_cli_bridge import WebSocketCLIBridge
+
+# Lobby hardening (security): combined cap on waiting rooms + active games.
+MAX_CONCURRENT_ROOMS = 8
+# Strict lobby validation: Regicide supports 2-4 players (solo unsupported).
+VALID_PLAYER_COUNTS = {2, 3, 4}
+# Cross-origin defense: only the Phase-B static sidecar's origin may connect.
+ALLOWED_ORIGINS = ['http://localhost:8766']
+# Inbound frame cap (security): malformed/oversized frames are dropped.
+MAX_MESSAGE_SIZE = 65536
 
 class RegicideWebSocketServer:
     def __init__(self, host='localhost', port=8765):
@@ -68,15 +77,43 @@ class RegicideWebSocketServer:
         # Check if it's an active game
         elif session_id in self.active_games:
             bridge = self.active_games[session_id]
-            for player in bridge.game_state.players:
-                client_id = bridge.get_client_id_for_player(player)
-                if client_id:
-                    await self.send_to_client(client_id, message)
+            for client_id in bridge.client_by_id:
+                await self.send_to_client(client_id, message)
 
     async def handle_create_game(self, client_id: str, data: dict):
         """Handle game creation request"""
-        num_players = data.get('num_players', 2)
+        num_players = data.get('num_players')
         player_name = data.get('player_name', f'Player_{client_id[:8]}')
+
+        # Boundary validation (security): strict lobby schemas, no state
+        # change on any rejection.
+        if not isinstance(num_players, int) or isinstance(num_players, bool) \
+                or num_players not in VALID_PLAYER_COUNTS:
+            await self.send_to_client(client_id, {
+                'type': 'error',
+                'message': 'num_players must be 2, 3, or 4'
+            })
+            return
+        if not isinstance(player_name, str) or not player_name.strip():
+            await self.send_to_client(client_id, {
+                'type': 'error',
+                'message': 'player_name must be a non-empty string'
+            })
+            return
+        # One room per client.
+        if client_id in self.client_to_session:
+            await self.send_to_client(client_id, {
+                'type': 'error',
+                'message': 'You are already in a game session'
+            })
+            return
+        # Concurrent room cap (waiting rooms + active games).
+        if len(self.waiting_rooms) + len(self.active_games) >= MAX_CONCURRENT_ROOMS:
+            await self.send_to_client(client_id, {
+                'type': 'error',
+                'message': 'Server is full; try again later'
+            })
+            return
 
         # Create new waiting room
         session_id = str(uuid.uuid4())[:8]  # Short ID for easier sharing
@@ -108,12 +145,36 @@ class RegicideWebSocketServer:
             })
             return
 
+        if not isinstance(player_name, str) or not player_name.strip():
+            await self.send_to_client(client_id, {
+                'type': 'error',
+                'message': 'player_name must be a non-empty string'
+            })
+            return
+
         waiting_room = self.waiting_rooms[session_id]
 
         if len(waiting_room['players']) >= waiting_room['max_players']:
             await self.send_to_client(client_id, {
                 'type': 'error',
                 'message': 'Game session is full'
+            })
+            return
+
+        # One room per client.
+        if client_id in self.client_to_session:
+            await self.send_to_client(client_id, {
+                'type': 'error',
+                'message': 'You are already in a game session'
+            })
+            return
+
+        # Reject duplicate player names (identity is client_id-keyed, but
+        # duplicate display names would make the table unreadable).
+        if player_name in waiting_room['players'].values():
+            await self.send_to_client(client_id, {
+                'type': 'error',
+                'message': 'That player name is already taken in this session'
             })
             return
 
@@ -144,6 +205,7 @@ class RegicideWebSocketServer:
             session_id,
             waiting_room['players'],  # {client_id: player_name}
             self.broadcast_to_session,
+            self.send_to_client,
             self.logger
         )
 
@@ -209,7 +271,7 @@ class RegicideWebSocketServer:
             # Remove from active game
             elif session_id in self.active_games:
                 cli_bridge = self.active_games[session_id]
-                player = cli_bridge.get_player_by_client_id(client_id)
+                player = cli_bridge.client_by_id.get(client_id)
                 if player:
                     # Handle player disconnect in your existing GameState
                     await self.broadcast_to_session(session_id, {
@@ -217,8 +279,17 @@ class RegicideWebSocketServer:
                         'player_name': player.name
                     })
 
-                    # Could implement reconnection logic here
-                    # For now, end the game if someone leaves
+                    # Minimum reconnection behavior (documented): a player
+                    # leaving an active game ends it for everyone.
+                    await self.broadcast_to_session(session_id, {
+                        'type': 'game_ended',
+                        'result': 'abandoned'
+                    })
+
+                    # Remove the whole session and clear every member's
+                    # session mapping.
+                    for member_id in cli_bridge.client_by_id:
+                        self.client_to_session.pop(member_id, None)
                     del self.active_games[session_id]
 
             if client_id in self.client_to_session:
@@ -228,13 +299,18 @@ class RegicideWebSocketServer:
         """Handle incoming WebSocket messages"""
         try:
             data = json.loads(message)
-            msg_type = data.get('type')
+            msg_type = data.get('type') if isinstance(data, dict) else None
 
-            if msg_type == 'create_game':
+            if not isinstance(data, dict):
+                await self.send_to_client(client_id, {
+                    'type': 'error',
+                    'message': 'Invalid message: expected a JSON object'
+                })
+            elif msg_type == 'create_game':
                 await self.handle_create_game(client_id, data)
             elif msg_type == 'join_game':
                 await self.handle_join_game(client_id, data)
-            elif msg_type == 'player_action':
+            elif msg_type in ('play', 'defend', 'jester_choose', 'preview'):
                 await self.handle_player_action(client_id, data)
             elif msg_type == 'leave_game':
                 await self.handle_leave_game(client_id)
@@ -261,12 +337,36 @@ class RegicideWebSocketServer:
         client_id = str(uuid.uuid4())
         await self.register_client(websocket, client_id)
 
+        # Concurrent per-connection dispatch (A6): every inbound message is
+        # handled in its own task, so a handler that awaits a client reply —
+        # the Jester peek-then-inject choice (bridge D3) — cannot deadlock
+        # this read loop. Safety: engine.step() is synchronous and the
+        # bridge validates expected-client/phase with NO await between
+        # validation and step, so task interleaving can neither double-step
+        # nor reorder engine state; while a Jester choice is pending the
+        # bridge rejects every non-jester_choose action (bridge D3/D4).
+        pending_tasks: Set[asyncio.Task] = set()
+
+        def _on_done(task: asyncio.Task) -> None:
+            pending_tasks.discard(task)
+
         try:
             async for message in websocket:
-                await self.handle_message(websocket, client_id, message)
+                task = asyncio.create_task(
+                    self.handle_message(websocket, client_id, message))
+                pending_tasks.add(task)
+                task.add_done_callback(_on_done)
         except websockets.exceptions.ConnectionClosed:
             pass
         finally:
+            # Cancel in-flight handlers BEFORE teardown so a pending action
+            # can never race session cleanup. A handler can only be paused
+            # at an await (Jester wait or an outbound send) — never between
+            # validation and the synchronous step.
+            for task in pending_tasks:
+                task.cancel()
+            if pending_tasks:
+                await asyncio.gather(*pending_tasks, return_exceptions=True)
             await self.unregister_client(client_id)
 
     def start_server(self):
@@ -278,7 +378,9 @@ class RegicideWebSocketServer:
             self.host,
             self.port,
             ping_interval=20,
-            ping_timeout=10
+            ping_timeout=10,
+            origins=ALLOWED_ORIGINS,   # websockets 12.0 legacy serve kwarg
+            max_size=MAX_MESSAGE_SIZE
         )
 
         return start_server

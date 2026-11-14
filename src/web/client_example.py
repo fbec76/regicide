@@ -53,18 +53,31 @@ class RegicideClient:
         })
 
     async def play_cards(self, card_indices):
-        """Play selected cards"""
+        """Play selected cards (empty list = yield the turn)"""
         await self.send_message({
-            'type': 'player_action',
-            'action': 'play_cards',
+            'type': 'play',
             'card_indices': card_indices
         })
 
     async def yield_turn(self):
         """Yield the turn"""
         await self.send_message({
-            'type': 'player_action',
-            'action': 'yield'
+            'type': 'play',
+            'card_indices': []
+        })
+
+    async def defend(self, card_indices):
+        """Discard cards to defend against the enemy attack"""
+        await self.send_message({
+            'type': 'defend',
+            'card_indices': card_indices
+        })
+
+    async def choose_jester(self, target_client_id):
+        """Choose which player takes the next turn (after a Jester play)"""
+        await self.send_message({
+            'type': 'jester_choose',
+            'target_client_id': target_client_id
         })
 
     async def handle_server_message(self, message):
@@ -89,27 +102,34 @@ class RegicideClient:
             print("🎮 Game has started!")
             self.game_active = True
 
-        elif msg_type == 'game_state':
+        elif msg_type == 'state':
             await self.display_game_state(data)
 
         elif msg_type == 'action_required':
-            if data.get('active_player') and self.game_active:
-                await self.handle_action_request(data)
+            if self.game_active and data.get('player') == self.player_name:
+                if data.get('phase') == 'attack':
+                    await self.handle_action_request(data)
+                elif data.get('phase') == 'defense':
+                    await self.select_discard_cards(data.get('needed', 0))
+
+        elif msg_type == 'jester_choice_required':
+            if data.get('player') == self.player_name:
+                await self.handle_jester_choice(data)
 
         elif msg_type == 'input_required':
             await self.handle_input_request(data)
 
         elif msg_type == 'cards_played':
-            print(f"🃏 {data['player_name']} played: {', '.join(data['cards'])}")
-            print(f"   Total attack: {data['total_attack']}")
+            player = data.get('player', data.get('player_name', '?'))
+            print(f"🃏 {player} played: {', '.join(data.get('cards', []))}")
 
         elif msg_type == 'enemy_defeated':
-            print(f"💀 {data.get('enemy_name', 'Enemy')} defeated!")
+            print(f"💀 {data.get('enemy_name', data.get('player', 'Enemy'))} defeated!")
 
         elif msg_type == 'game_ended':
             result = data['result']
             print(f"\n🎯 GAME OVER: {result.upper()}")
-            print(f"   {data['message']}")
+            print(f"   {data.get('message', '')}")
             self.game_active = False
 
         elif msg_type == 'error':
@@ -119,25 +139,41 @@ class RegicideClient:
             print(f"📨 {msg_type}: {data}")
 
     async def display_game_state(self, state):
-        """Display current game state"""
-        enemy = state['current_enemy']
-        print(f"\n🏰 Current Enemy: {enemy['name']}")
-        print(f"   Health: {enemy['health'] - enemy['damage_taken']}/{enemy['health']}")
-        print(f"   Attack: {enemy['attack']}")
+        """Display current game state (personalized 'state' message)"""
+        enemy = state.get('enemy') or {}
+        max_health = enemy.get('max_health', 0)
+        damage = enemy.get('current_damage', 0)
+        print(f"\n🏰 Current Enemy: {enemy.get('name', '?')}")
+        print(f"   Health: {max_health - damage}/{max_health}")
+        print(f"   Attack: {enemy.get('effective_attack', '?')}")
 
-        print(f"\n👤 Active Player: {state['active_player']}")
+        print(f"\n👤 Active Player: {state.get('active_player', '?')}")
 
         # Display hand if it's in the state
-        for player in state['players']:
-            if player['name'] == self.player_name and 'hand' in player:
-                self.hand = player['hand']
-                print(f"\n🃏 Your Hand:")
-                for i, card in enumerate(self.hand):
-                    print(f"   [{i}] {card['display_name']} (Value: {card['value']})")
+        hand = (state.get('you') or {}).get('hand', [])
+        self.hand = hand
+        if hand:
+            print(f"\n🃏 Your Hand:")
+            for card in hand:
+                print(f"   [{card['index']}] {card['display_name']} (Value: {card['value']})")
+
+    async def handle_jester_choice(self, data):
+        """Handle a Jester next-player choice request"""
+        print("\n🃟 You played a Jester — choose which player takes the next turn:")
+        players = data.get('players', [])
+        for i, p in enumerate(players):
+            print(f"   [{i}] {p['name']} ({p['client_id']})")
+
+        pick = input("Enter number: ").strip()
+        try:
+            target = players[int(pick)]
+            await self.choose_jester(target['client_id'])
+        except (ValueError, IndexError, KeyError):
+            print("Invalid choice; send 'jester_choose' with a target_client_id")
 
     async def handle_action_request(self, data):
         """Handle action request from server"""
-        if data.get('active_player'):
+        if data.get('player') == self.player_name:
             print(f"\n⚡ Your turn! Choose action:")
             print("   [1] Play cards")
             print("   [2] Yield turn")
@@ -199,11 +235,7 @@ class RegicideClient:
             if all(0 <= idx < len(self.hand) for idx in indices):
                 total_value = sum(self.hand[idx]['value'] for idx in indices)
                 if total_value >= required_value:
-                    await self.send_message({
-                        'type': 'player_action',
-                        'action': 'discard_cards',
-                        'card_indices': indices
-                    })
+                    await self.defend(indices)
                 else:
                     print(f"Not enough value! Need {required_value}, selected {total_value}")
             else:
