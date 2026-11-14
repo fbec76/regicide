@@ -67,17 +67,20 @@ class Engine:
         self.logger.data(f"DISCARD PILE: {[str(c) for c in game_state.discard_pile.cards]}")
         self.logger.data(f"UPCOMING ENEMIES: {[str(c) for c in game_state.castle_deck.cards]}")
 
-    def handle_jester_played(self, active_player: Player, game_state: GameState, played_spades: List[Card]):
+    def handle_jester_played(self, active_player: Player, game_state: GameState):
         show_jester_played()
         self.logger.info(f"Jester played by {active_player.name}")
         game_state.face_jester_played = True
         game_state.update_enemy_immunity()
-        if game_state.current_enemy.suit == 'spades' and played_spades:
-            for spade_card in played_spades:
+        # Official rules: spades played against a spades enemy BEFORE the
+        # Jester (blocked by immunity) begin reducing the enemy's attack once
+        # the Jester negates immunity — apply them retroactively, then clear.
+        if game_state.current_enemy.suit == 'spades' and game_state.pending_spades:
+            for spade_card in game_state.pending_spades:
                 resolve_suit_power('spades', spade_card.value, game_state.current_enemy, discard_pile=None,
                                    tavern_deck=None, players=None, game_state=game_state,
                                    acting_player=active_player)
-            played_spades.clear()
+            game_state.pending_spades.clear()
         next_player = prompt_next_player(list(game_state.players))
         self.logger.info(f"Next player after Jester: {next_player.name}")
         while game_state.get_active_player() != next_player:
@@ -114,10 +117,15 @@ class Engine:
         for c in game_state.cards_against_enemy:
             game_state.discard_pile.add_to_top(c)
         game_state.cards_against_enemy.clear()
+        game_state.pending_spades.clear()
         next_enemy = game_state.castle_deck.draw_one()
         self.logger.info(f"Next enemy: {next_enemy.display_name if next_enemy else 'None (game won)'}")
         game_state.current_enemy = next_enemy
         game_state.face_jester_played = False
+        # Reset immunity for the new battle too: after a jester-assisted
+        # defeat the stale enemy_immunity=False would keep the pending-spades
+        # collection gate from ever firing against the next spades enemy.
+        game_state.enemy_immunity = True
         if next_enemy is not None:
             show_new_enemy()
 
@@ -140,10 +148,90 @@ class Engine:
             show_warning(f"{active_player.name} cannot yield at this time!")
             self.logger.error(f"{active_player.name} attempted to yield but cannot yield now.")
             return ''
+        game_state.record_yield(active_player)
         self.log_data_state(game_state)
         return 'continue'
 
-    def handle_play_action(self, active_player: Player, game_state: GameState, played_spades: List[Card]):
+    # ------------------------------------------------------------------
+    # Core turn engine, shared by the CLI (run) and gym (step) front-ends.
+    # Core methods return outcome kinds; rewards, obs tuples, prompts,
+    # logging and show_* display calls stay in the front-end wrappers.
+    # ------------------------------------------------------------------
+
+    def _begin_turn(self, game_state: GameState):
+        """Turn-start bookkeeping: record the turn start, then check whether
+        the active player is stuck (empty hand AND cannot yield — everyone
+        loses). Returns 'player_defeated' or None."""
+        active_player = game_state.get_active_player()
+        game_state.record_turn_start(active_player)
+        # Stuck check placed after record_turn_start: record_turn_start
+        # resets only THIS player's own flag, while can_yield (inside
+        # player_is_stuck) reads only the OTHER players' flags — so this
+        # ordering cannot change whether the player is stuck.
+        if game_state.player_is_stuck(active_player):
+            return 'player_defeated'
+        return None
+
+    def _attempt_yield(self, active_player: Player, game_state: GameState):
+        """Shared yield: can_yield gate, record the yield, then check whether
+        the enemy attack forces a defense phase or the turn advances (phase
+        and turn mutations included). Returns 'forbidden',
+        'defense_required' or 'turn_advanced'."""
+        if not game_state.can_yield(active_player):
+            return 'forbidden'
+        game_state.record_yield(active_player)
+        if game_state.current_enemy.effective_attack() > 0:
+            self.phase = "defense"
+            return 'defense_required'
+        game_state.advance_turn()
+        self.phase = "attack"
+        return 'turn_advanced'
+
+    def _execute_play(self, active_player: Player, cards: List[Card], game_state: GameState):
+        """Shared play execution: membership validation, spade-pending
+        collection (enemy-suit spades while immunity blocks them), the
+        attack, and the defeat/win checks. Does NOT advance the turn or set
+        the phase — front-ends do that from the outcome. Returns
+        'invalid_play', 'jester', 'enemy_defeated', 'win',
+        'defense_required' or 'turn_advanced'."""
+        if not all(c in active_player.hand for c in cards):
+            return 'invalid_play'
+        if not is_valid_play(cards):
+            return 'invalid_play'
+        if can_play_jester(cards):
+            self.handle_jester_played(active_player, game_state)
+            return 'jester'
+        for c in cards:
+            if c.suit == 'spades' and game_state.current_enemy.suit == 'spades' and game_state.enemy_immunity:
+                game_state.pending_spades.append(c)
+        self.handle_player_attack(active_player, cards, game_state)
+        if game_state.current_enemy.is_defeated():
+            self.handle_enemy_defeat(game_state)
+            # Official rules Step 3 (iv): the player who defeated the enemy skips Step 4 and begins a new turn against the enemy just revealed — turn does NOT advance here.
+            if game_state.is_game_won():
+                return 'win'
+            return 'enemy_defeated'
+        if game_state.current_enemy.effective_attack() > 0:
+            return 'defense_required'
+        return 'turn_advanced'
+
+    def _execute_defense(self, active_player: Player, discards: List[Card], game_state: GameState):
+        """Shared defense execution: defense_validation, discard membership
+        and coverage checks, then the discard. Returns ('loss', obs, info),
+        ('invalid_defense', None, None) or ('success', None, None). Turn
+        advancement stays with the front-ends."""
+        needed = game_state.current_enemy.effective_attack()
+        defense_validation = self.defense_validation(game_state, needed)
+        if not defense_validation[0]:
+            return 'loss', defense_validation[1], defense_validation[2]
+        if not all(c in active_player.hand for c in discards):
+            return 'invalid_defense', None, None
+        if sum(c.value for c in discards) < needed:
+            return 'invalid_defense', None, None
+        self.handle_enemy_defense(game_state, discards)
+        return 'success', None, None
+
+    def handle_play_action(self, active_player: Player, game_state: GameState):
         while True:
             cards_played = prompt_card_indexes_to_play(active_player)
             # If no cards are played, treat as yield
@@ -158,19 +246,22 @@ class Engine:
                 show_invalid_action("That is not a valid play. Try again.")
                 self.logger.warning(f"Invalid play by {active_player.name}: {[str(c) for c in cards_played]}")
         if can_play_jester(cards_played):
-            self.handle_jester_played(active_player, game_state, played_spades)
+            self.handle_jester_played(active_player, game_state)
             return 'jester'
         for c in cards_played:
             if c.suit == game_state.current_enemy.suit and game_state.enemy_immunity:
                 show_warning(f"You have played a card of the enemy's suit ({c.suit}) while immunity is ON")
-            if c.suit == 'spades' and game_state.current_enemy.suit == 'spades' and game_state.enemy_immunity:
-                played_spades.append(c)
-        self.handle_player_attack(active_player, cards_played, game_state)
-        if game_state.current_enemy.is_defeated():
-            self.handle_enemy_defeat(game_state)
-            if game_state.is_game_won():
-                return 'game_won'
+        outcome = self._execute_play(active_player, cards_played, game_state)
+        if outcome == 'jester':
+            return 'jester'
+        if outcome == 'win':
+            return 'game_won'
+        if outcome == 'enemy_defeated':
             return 'enemy_defeated'
+        # 'defense_required'/'turn_advanced': run()'s loop performs the
+        # effective-attack check and turn handling itself. 'invalid_play' is
+        # unreachable here (the prompt loop already guaranteed a valid
+        # in-hand play) — treat it like any non-terminal result.
         return 'continue'
 
     def handle_player_attack(self, active_player: Player, cards_played: List[Card], game_state: GameState):
@@ -202,19 +293,39 @@ class Engine:
         self.phase = 'attack'
         while not self.game_state.is_game_won():
             active_player = self.game_state.get_active_player()
+            stuck = self._begin_turn(self.game_state) if self.phase == 'attack' else None
             self.logger.info(f"Turn: {active_player.name}")
             self.log_data_state(self.game_state)
-            if active_player.hand_size() == 0:
-                show_loss(f"{active_player.name} has no cards left to play and is defeated!")
-                self.logger.info(f"{active_player.name} has no cards left to play and is defeated!")
+            if stuck:
+                show_loss(f"{active_player.name} cannot play a card or yield — game lost!")
+                self.logger.error(f"{active_player.name} is stuck (no cards to play, cannot yield): game lost.")
                 return
+            if active_player.hand_size() == 0:
+                # Empty hand but yield allowed (not stuck): auto-yield — never
+                # prompt with an empty hand. With attack > 0 the empty hand
+                # then dies in defense_validation (per rules); with attack 0
+                # the turn simply advances.
+                self.logger.info(f"{active_player.name} has no cards left and yields automatically.")
+                self.logger.data(f"YIELD by {active_player.name}")
+                outcome = self._attempt_yield(active_player, self.game_state)
+                if outcome == 'turn_advanced':
+                    self.log_data_state(self.game_state)
+                    continue
+                # 'defense_required': fall through — the empty hand dies in
+                # defense_validation (per rules).
             show_current_state(self.game_state)
             show_player_hand(active_player)
-            played_spades = []
             while True:
                 if self.phase == 'attack':
-                    result = self.handle_play_action(active_player, self.game_state, played_spades)
+                    result = self.handle_play_action(active_player, self.game_state)
                     if result in ('jester', 'enemy_defeated'):
+                        break
+                    if result == 'game_won':
+                        # FIX-7: the win is terminal — break cleanly and let
+                        # the outer while's not is_game_won() condition exit
+                        # so show_win() runs (previously this fell through to
+                        # current_enemy.effective_attack() with current_enemy
+                        # None and crashed with AttributeError).
                         break
                     enemy_attack = self.game_state.current_enemy.effective_attack()
                     if enemy_attack > 0:
@@ -229,13 +340,21 @@ class Engine:
                     # Defense phase: handle enemy attack
                     needed = self.game_state.current_enemy.effective_attack()
                     show_discard_phase(self.game_state.get_active_player(), needed)
-                    defense_validation = self.defense_validation(self.game_state, needed)
-                    if not defense_validation[0]:
-                        obs = defense_validation[1]
-                        return obs, -10, True, defense_validation[2]
+                    if active_player.hand_size() == 0:
+                        # Empty hand (e.g. after an Option-A defeat with the
+                        # new enemy attacking): never prompt — every index
+                        # would be invalid and empty input would re-prompt
+                        # forever. defense_validation in the core handles the
+                        # loss.
+                        outcome, loss_obs, loss_info = self._execute_defense(
+                            active_player, [], self.game_state)
                     else:
-                        self.handle_enemy_defense(self.game_state,
-                                                  prompt_card_indexes_to_discard(active_player, needed))
+                        outcome, loss_obs, loss_info = self._execute_defense(
+                            active_player,
+                            prompt_card_indexes_to_discard(active_player, needed),
+                            self.game_state)
+                    if outcome == 'loss':
+                        return loss_obs, -10, True, loss_info
                     self.game_state.advance_turn()
                     self.log_data_state(self.game_state)
                     self.phase = 'attack'
@@ -268,7 +387,15 @@ class Engine:
             raise Exception("Game is over. Call reset().")
         obs, reward, done, info = None, 0, False, {}
         if self.phase == "attack":
-            obs, reward, done, info = self.step_attack(action)
+            stuck = self._begin_turn(self.game_state)
+            if stuck:
+                # Preempts action parsing: a stuck player has no legal action,
+                # so terminate instead of looping -1 rewards forever. The
+                # epilogue below applies the standard -0.01 dispatch penalty.
+                obs = self.get_observation()
+                reward, done, info = -10, True, {"result": "player_defeated"}
+            else:
+                obs, reward, done, info = self.step_attack(action)
         elif self.phase == "defense":
             obs, reward, done, info = self.step_defense(action)
         else:
@@ -280,79 +407,64 @@ class Engine:
     def step_attack(self, action):
         game_state = self.game_state
         active_player = game_state.get_active_player()
-        played_spades = []
         if action["type"] == "play":
             cards_played = action["cards"]
             # If no cards are played, treat as yield
             if not cards_played:
+                outcome = self._attempt_yield(active_player, game_state)
+                if outcome == 'forbidden':
+                    obs = self.get_observation()
+                    return obs, -1, False, {"error": "Yield forbidden"}
                 self.logger.info(f"{active_player.name} yields (no cards played).")
                 self.logger.data(f"YIELD by {active_player.name}")
-                # After yielding, check if defense is needed
-                enemy_attack = game_state.current_enemy.effective_attack()
-                if enemy_attack > 0:
-                    self.phase = "defense"
+                if outcome == 'defense_required':
                     obs = self.get_observation()
                     return obs, -0.1, False, {"result": "yielded_defense_required"}
-                else:
-                    game_state.advance_turn()
-                    self.phase = "attack"
-                    obs = self.get_observation()
-                    return obs, -0.1, False, {"result": "yielded_turn_advanced"}
-            if not is_valid_play(cards_played):
+                obs = self.get_observation()
+                return obs, -0.1, False, {"result": "yielded_turn_advanced"}
+            outcome = self._execute_play(active_player, cards_played, game_state)
+            if outcome == 'invalid_play':
                 obs = self.get_observation()
                 return obs, -1, False, {"error": "Invalid play"}
-            if can_play_jester(cards_played):
-                self.handle_jester_played(active_player, game_state, played_spades)
+            if outcome == 'jester':
                 obs = self.get_observation()
                 return obs, 0.2, False, {"result": "jester"}
-            for c in cards_played:
-                if c.suit == 'spades' and game_state.current_enemy.suit == 'spades' and game_state.enemy_immunity:
-                    played_spades.append(c)
-            self.handle_player_attack(active_player, cards_played, game_state)
-            if game_state.current_enemy.is_defeated():
-                self.handle_enemy_defeat(game_state)
-                if game_state.is_game_won():
-                    obs = self.get_observation()
-                    return obs, 10, True, {"result": "win"}
-                else:
-                    obs = self.get_observation()
-                    return obs, 2, False, {"result": "enemy_defeated"}
-            else:
-                enemy_attack = game_state.current_enemy.effective_attack()
-                if enemy_attack > 0:
-                    self.phase = "defense"
-                    obs = self.get_observation()
-                    return obs, 0.2, False, {"result": "defense_required"}
-                else:
-                    game_state.advance_turn()
-                    self.phase = "attack"
-                    obs = self.get_observation()
-                    return obs, 0.2, False, {"result": "turn_advanced"}
-        else:
+            if outcome == 'win':
+                obs = self.get_observation()
+                return obs, 10, True, {"result": "win"}
+            if outcome == 'enemy_defeated':
+                obs = self.get_observation()
+                return obs, 2, False, {"result": "enemy_defeated"}
+            if outcome == 'defense_required':
+                self.phase = "defense"
+                obs = self.get_observation()
+                return obs, 0.2, False, {"result": "defense_required"}
+            # 'turn_advanced'
+            game_state.advance_turn()
+            self.phase = "attack"
             obs = self.get_observation()
-            return obs, -1, False, {"error": "Unknown action type"}
+            return obs, 0.2, False, {"result": "turn_advanced"}
+        obs = self.get_observation()
+        return obs, -1, False, {"error": "Unknown action type"}
 
     def step_defense(self, action):
         game_state = self.game_state
         active_player = game_state.get_active_player()
         if action["type"] == "defend":
-            discards = action["cards"]
-            needed = game_state.current_enemy.effective_attack()
-            defense_validation = self.defense_validation(game_state, needed)
-            if not defense_validation[0]:
-                obs = defense_validation[1]
-                return obs, -10, True, defense_validation[2]
-            else:
-                self.handle_enemy_defense(game_state, discards)
-            print(f"{active_player.name} discarded {len(discards)} card(s) to cover attack.")
+            outcome, loss_obs, loss_info = self._execute_defense(active_player, action["cards"], game_state)
+            if outcome == 'loss':
+                return loss_obs, -10, True, loss_info
+            if outcome == 'invalid_defense':
+                obs = self.get_observation()
+                return obs, -1, False, {"error": "Invalid defense"}
+            print(f"{active_player.name} discarded {len(action['cards'])} card(s) to cover attack.")
             # After defense, always advance turn
             game_state.advance_turn()
             self.phase = "attack"
             obs = self.get_observation()
             return obs, 0.2, False, {"result": "defense_success"}
-        else:
-            obs = self.get_observation()
-            return obs, -1, False, {"error": "Unknown defense action"}
+        obs = self.get_observation()
+        return obs, -1, False, {"error": "Unknown defense action"}
 
     def get_observation(self):
         # Return a dict with game state and current phase
