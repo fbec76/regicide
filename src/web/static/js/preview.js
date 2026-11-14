@@ -18,7 +18,13 @@
  *   {"type":"preview", "valid": true, "damage": <int>,
  *    "double_damage": <bool>,
  *    "powers": {"hearts": "fires|blocked|pending", …},
- *    "defeats_enemy": <bool>, "yield_attack": <int>}
+ *    "defeats_enemy": <bool>, "yield_attack": <int>,
+ *    "post_play_attack": <int>,        — enemy's effective attack AFTER this
+ *                                        play resolves (spade shields applied
+ *                                        when they fire)
+ *    "pending_shield_value": <int>}    — 0 unless a spade is deferred to
+ *                                        pending; that shield lands after a
+ *                                        Jester
  *   invalid selection:
  *   {"type":"preview", "valid": false, "reason": "<why>"}
  *
@@ -115,6 +121,15 @@ function parsePreview(data) {
     suits,
     defeatsEnemy: Boolean(data.defeats_enemy),
     yieldAttack: typeof data.yield_attack === 'number' ? data.yield_attack : null,
+    // post_play_attack: enemy's effective attack after this play resolves
+    // (spade shields applied when they fire). pendingShieldValue: 0 unless a
+    // spade is deferred to pending — that shield lands after a Jester.
+    postPlayAttack: typeof data.post_play_attack === 'number'
+      ? data.post_play_attack
+      : null,
+    pendingShieldValue: typeof data.pending_shield_value === 'number'
+      ? data.pending_shield_value
+      : 0,
   };
 }
 
@@ -171,10 +186,22 @@ function previewResultEls(preview) {
       text: `${SUIT_LABELS[suit]} — ${SUIT_STATE_TEXT[suitState]}`,
     }));
   }
+  if (preview.postPlayAttack !== null) {
+    nodes.push(el('p', { className: 'pv-post' }, [
+      document.createTextNode('Enemy attack after this play: '),
+      el('strong', { text: String(preview.postPlayAttack) }),
+    ]));
+  }
+  if (preview.pendingShieldValue > 0) {
+    nodes.push(el('p', {
+      className: 'pv-line pv--deferred',
+      text: `Shield deferred — after a Jester: attack reduced by ${preview.pendingShieldValue} more.`,
+    }));
+  }
   if (preview.yieldAttack !== null) {
     nodes.push(el('p', {
       className: 'pv-line pv-yield',
-      text: `The enemy will strike back for ${preview.yieldAttack}.`,
+      text: `If you yield: enemy strikes for ${preview.yieldAttack}.`,
     }));
   }
   if (preview.defeatsEnemy) {

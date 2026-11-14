@@ -11,6 +11,7 @@
  */
 import {
   clearSelection,
+  handCannotCover,
   isMyTurn,
   resetToLobby,
   toggleSelection,
@@ -70,7 +71,11 @@ function wireActionBar(store, connection) {
       // Yield = play with an empty card list (bridge maps [] → yield).
       connection.send({ type: 'play', card_indices: [] });
       clearSelection(store);
-    } else if (action === 'defend' && selection.length > 0) {
+    } else if (action === 'defend'
+      && (selection.length > 0 || handCannotCover(store.state))) {
+      // Normally a selection is required; when the hand cannot cover the
+      // attack (stale defense request), the attempt is sent even with an
+      // empty selection so the server can resolve the loss.
       connection.send({ type: 'defend', card_indices: [...selection] });
       clearSelection(store);
     }

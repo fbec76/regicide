@@ -68,6 +68,21 @@ export function selectedSum(state) {
   );
 }
 
+/** Total value of the entire hand (used for the "party is lost" check). */
+export function handSum(state) {
+  return handCards(state).reduce((sum, card) => sum + (card.value || 0), 0);
+}
+
+/**
+ * True during a defense phase when the whole hand cannot cover the attack:
+ * the loss is inevitable, but the client must still be able to send the
+ * defense attempt so the server can resolve it.
+ */
+export function handCannotCover(state) {
+  const needed = defenseNeeded(state);
+  return needed !== null && handSum(state) < needed;
+}
+
 export function defenseNeeded(state) {
   return state.action && state.action.phase === 'defense'
     ? state.action.needed

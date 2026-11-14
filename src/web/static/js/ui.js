@@ -10,7 +10,9 @@ import {
   CASTLE_SIZE,
   canYield,
   defenseNeeded,
+  handCannotCover,
   handCards,
+  handSum,
   isMyTurn,
   selectedSum,
 } from './state.js';
@@ -121,20 +123,31 @@ function renderCastleStrip(state) {
   const strip = document.getElementById('castle-strip');
   const game = state.game;
   const enemyAlive = Boolean(game && game.enemy);
-  const remaining = game ? game.castle_remaining : CASTLE_SIZE;
-  const defeated = Math.max(CASTLE_SIZE - remaining - (enemyAlive ? 1 : 0), 0);
+  // Shared state contract: `castle_defeated` (enemies defeated so far) and
+  // `castle_total` (12, constant). Fall back to the castle_remaining
+  // derivation for servers that have not shipped the new fields yet.
+  const total = typeof game?.castle_total === 'number' && game.castle_total > 0
+    ? game.castle_total
+    : CASTLE_SIZE;
+  const defeated = typeof game?.castle_defeated === 'number'
+    ? game.castle_defeated
+    : Math.max(CASTLE_SIZE - (game ? game.castle_remaining : CASTLE_SIZE) - (enemyAlive ? 1 : 0), 0);
 
   const children = [];
-  for (let i = 0; i < CASTLE_SIZE; i += 1) {
+  for (let i = 0; i < total; i += 1) {
     let cls = 'slot--upcoming';
     if (i < defeated) cls = 'slot--defeated';
     else if (enemyAlive && i === defeated) cls = 'slot--current';
     children.push(el('span', {
       className: `castle-slot ${cls}`,
       attrs: { 'aria-hidden': 'true' },
+      text: cls === 'slot--defeated' ? '✔' : '',
     }));
   }
   replaceChildren(strip, children);
+  // Slots are aria-hidden decorations; the strip's own label carries the
+  // progress for assistive tech.
+  strip.setAttribute('aria-label', `Castle progress: ${defeated} of ${total} defeated`);
 }
 
 function renderEnemy(state) {
@@ -217,6 +230,14 @@ function barEl(kind, current, max, label) {
     style: { },
   }, [
     el('div', { className: 'bar__fill', style: { width: `${pct}%` } }),
+    // Numeric overlay (user feedback: "attack and health should include the
+    // number, not only the bar") — absolutely positioned so the number can
+    // never resize or shift the bar itself.
+    el('span', {
+      className: 'bar__num',
+      text: `${current} / ${max}`,
+      attrs: { 'aria-hidden': 'true' },
+    }),
   ]);
 }
 
@@ -352,20 +373,35 @@ function defenseControls(state, myTurn) {
     })];
   }
   const sum = selectedSum(state);
-  const canDefend = sum >= needed;
-  return [
+  const cannotCover = handSum(state) < needed;
+  // Client hardening: when the hand cannot cover the attack the loss is
+  // inevitable (the server auto-terminates before asking for a defense).
+  // Surface that explicitly — and keep the button enabled with a warning so
+  // a stale defense action_required can still be sent and resolved by the
+  // server regardless of message ordering.
+  const canDefend = sum >= needed || cannotCover;
+  const children = [
     el('p', {
       className: 'action-hint',
       text: `Defense! Discard cards worth at least ${needed} (selected: ${sum}).`,
     }),
-    el('button', {
-      className: 'btn btn--primary',
-      text: 'Discard to defend',
-      disabled: !canDefend,
-      title: canDefend ? undefined : `Selected ${sum} of ${needed} needed`,
-      attrs: { type: 'button', 'data-action': 'defend' },
-    }),
   ];
+  if (cannotCover) {
+    children.push(el('p', {
+      className: 'action-hint action-hint--danger',
+      text: 'The hand cannot cover this attack — the party is lost.',
+    }));
+  }
+  children.push(el('button', {
+    className: cannotCover ? 'btn btn--primary btn--warn' : 'btn btn--primary',
+    text: 'Discard to defend',
+    disabled: !canDefend,
+    title: cannotCover
+      ? 'The hand cannot cover this attack — sending the attempt anyway'
+      : (canDefend ? undefined : `Selected ${sum} of ${needed} needed`),
+    attrs: { type: 'button', 'data-action': 'defend' },
+  }));
+  return children;
 }
 
 function renderLog(state) {

@@ -69,9 +69,19 @@ selection changes during the owner's attack turn, and the server
     "spades": "pending"
   },
   "defeats_enemy": false,
-  "yield_attack": 7
+  "yield_attack": 7,
+  "post_play_attack": 4,
+  "pending_shield_value": 5
 }
 ```
+
+`post_play_attack` is the enemy's effective attack **after** this play
+resolves (spade shields applied when they fire) — the client shows it as the
+prominent "Enemy attack after this play: X" line. `pending_shield_value` is
+`0` unless a spade is deferred to pending; that shield lands after a Jester,
+and the client appends "shield deferred — after a Jester: attack reduced by
+N more" when it is positive. `yield_attack` remains the yield-cost line
+("If you yield: enemy strikes for N").
 
 Per-suit three-state semantics: power **fires** / power **blocked but damage
 still applies** / spade **shield deferred to `pending_spades`** (rendered as
@@ -81,6 +91,14 @@ entry — clubs only double damage (×2 marker via `double_damage`).
 An illegal selection answers `{"valid": false, "reason": "…"}` and the
 reason is shown inline in the preview panel (never in the turn log).
 Transport errors during a pending preview are also shown inline.
+
+### Shared state additions
+
+Personalized `state` messages additionally carry `castle_defeated` (int —
+enemies defeated so far) and `castle_total` (int — constant 12). The castle
+progress strip renders `castle_total` slots, marking the first
+`castle_defeated` as defeated (gold ✔). Older servers without these fields
+fall back to the `castle_remaining` derivation.
 
 ## Security
 
