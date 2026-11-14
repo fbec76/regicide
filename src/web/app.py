@@ -284,18 +284,22 @@ class RegicideWebSocketServer:
                 cli_bridge = self.active_games[session_id]
                 player = cli_bridge.client_by_id.get(client_id)
                 if player:
-                    # Handle player disconnect in your existing GameState
-                    await self.broadcast_to_session(session_id, {
-                        'type': 'player_left',
-                        'player_name': player.name
-                    })
+                    # A game that already ended must not be re-announced as
+                    # 'abandoned' — the terminal game_ended broadcast (e.g.
+                    # player_defeated) would be overwritten otherwise.
+                    if not cli_bridge.game_over:
+                        # Handle player disconnect in your existing GameState
+                        await self.broadcast_to_session(session_id, {
+                            'type': 'player_left',
+                            'player_name': player.name
+                        })
 
-                    # Minimum reconnection behavior (documented): a player
-                    # leaving an active game ends it for everyone.
-                    await self.broadcast_to_session(session_id, {
-                        'type': 'game_ended',
-                        'result': 'abandoned'
-                    })
+                        # Minimum reconnection behavior (documented): a
+                        # player leaving an active game ends it for everyone.
+                        await self.broadcast_to_session(session_id, {
+                            'type': 'game_ended',
+                            'result': 'abandoned'
+                        })
 
                     # Remove the whole session and clear every member's
                     # session mapping.

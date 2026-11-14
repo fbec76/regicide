@@ -301,6 +301,65 @@ async def _full_game_to_loss(total_cards):
         await shutdown_server(srv, clients)
 
 
+def test_leave_after_loss_suppresses_abandoned_broadcast(total_cards):
+    asyncio.run(_leave_after_loss_suppresses_abandoned(total_cards))
+
+
+async def _leave_after_loss_suppresses_abandoned(total_cards):
+    """A disconnect at the same moment the game ends must not overwrite the
+    terminal game_ended: handle_leave_game skips the abandoned broadcast when
+    the bridge already set game_over (player_defeated stays the last
+    game_ended the surviving client sees). Session cleanup still happens."""
+    random.seed(11)  # deterministic deal; mirrors _full_game_to_loss
+    server, srv, port = await start_ephemeral_server()
+    clients = []
+    queue = asyncio.Queue()
+    stop = asyncio.Event()
+    pumps = []
+    try:
+        alice = await connect_client(port)
+        bob = await connect_client(port)
+        clients = [alice, bob]
+        pumps = [asyncio.ensure_future(pump(c, queue, stop)) for c in clients]
+        handshake = {"session_id": None, "created": asyncio.Event()}
+        driver = asyncio.ensure_future(
+            drive_game(server, clients, queue, total_cards, handshake))
+
+        await alice.send({"type": "create_game", "num_players": 2,
+                          "player_name": "Alice"})
+        await asyncio.wait_for(handshake["created"].wait(), timeout=RECV_TIMEOUT)
+        session_id = handshake["session_id"]
+
+        await bob.send({"type": "join_game", "session_id": session_id,
+                        "player_name": "Bob"})
+        await asyncio.wait_for(driver, timeout=120)
+
+        # Terminal loss broadcast to BOTH clients.
+        for client in clients:
+            assert client.of_type("game_ended")[-1] == {
+                "type": "game_ended", "result": "player_defeated"}
+
+        # Bob disconnects AFTER the game ended: no abandoned broadcast may
+        # arrive on the surviving client. A buggy broadcast would reach
+        # alice's pump within a few 0.1s recv cycles, so a quiet period
+        # proves the suppression.
+        await bob.send({"type": "leave_game"})
+        await asyncio.sleep(0.5)
+        assert alice.of_type("game_ended") == [
+            {"type": "game_ended", "result": "player_defeated"}]
+
+        # Session cleanup still ran despite the suppressed broadcast.
+        assert session_id not in server.active_games
+        assert session_id not in server.client_to_session.values()
+    finally:
+        stop.set()
+        for pump_task in pumps:
+            pump_task.cancel()
+        if pumps:
+            await asyncio.gather(*pumps, return_exceptions=True)
+        await shutdown_server(srv, clients)
+
+
 def test_lobby_flows_over_wire():
     asyncio.run(_lobby_flows())
 
